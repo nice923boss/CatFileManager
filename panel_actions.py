@@ -1,6 +1,6 @@
 """File operations and external-app launching for FilePanel (mixin).
 
-Covers Open-With / Send-To / HandBrake launching, copy/move worker pipeline,
+Covers Open-With / Send-To / HandBrake launching, copy/move via the queue,
 drag-drop handling, delete, zip/extract, rename, new file/folder, shortcut
 creation, copy-path and hash. Mixed into :class:`FilePanel`; all methods rely
 on host-panel attributes (``self.model``, ``self.tree``, ``self._workers``,
@@ -13,11 +13,12 @@ import subprocess
 import tarfile
 import zipfile
 
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QInputDialog,
     QLabel,
     QMessageBox,
@@ -25,14 +26,12 @@ from PySide6.QtWidgets import (
 )
 
 from batch_rename import BatchRenameDialog, execute_batch_rename
+from copy_engine import remove_path, unique_name
 from file_dialogs import FileProgressDialog, HashDialog
-from file_operations import (
-    FileOperationWorker,
-    ZipCompressWorker,
-    delete_to_trash,
-)
-from panel_widgets import _RenameLineEdit
+from file_operations import ZipCompressWorker, delete_to_trash
+from panel_widgets import _RenameLineEdit, drop_operation
 from shell_utils import _resolve_lnk_target
+from undo import trash_records, undo_stack
 
 # ERROR_CANCELLED: the user dismissed a UAC / SmartScreen elevation prompt.
 # This is a benign cancellation, not a launch failure.
@@ -70,6 +69,24 @@ class FilePanelActionsMixin:
     def _open_cmd(self, path: str):
         try:
             subprocess.Popen(["cmd", "/K", "cd", "/d", os.path.normpath(path)])
+        except Exception as e:
+            self.status_message.emit(_format_launch_error(e))
+
+    def _open_powershell(self, path: str):
+        try:
+            subprocess.Popen(
+                ["powershell.exe", "-NoExit"],
+                cwd=os.path.normpath(path),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        except Exception as e:
+            self.status_message.emit(_format_launch_error(e))
+
+    def _open_terminal(self, path: str):
+        try:
+            subprocess.Popen(["wt.exe", "-d", os.path.normpath(path)])
+        except FileNotFoundError:
+            self.status_message.emit("找不到 Windows Terminal（wt.exe），可從 Microsoft Store 安裝")
         except Exception as e:
             self.status_message.emit(_format_launch_error(e))
 
@@ -201,93 +218,57 @@ class FilePanelActionsMixin:
         if worker in self._workers:
             self._workers.remove(worker)
 
-    def _start_file_operation(self, operation: str, sources: list[str], destination: str) -> None:
-        if not destination:
-            self.status_message.emit("目標面板未開啟資料夾")
-            return
-        worker = FileOperationWorker(operation, sources, destination)
-        dialog = FileProgressDialog(operation, len(sources), parent=self)
-
-        worker.progress.connect(dialog.update_progress)
-        dialog._cancel_btn.clicked.connect(worker.cancel)
-
-        def _on_done(msg: str) -> None:
-            self.status_message.emit(msg)
-            self._remove_worker(worker)
-            self._refresh_all_panels()
-            dialog.accept()
-
-        def _on_error(msg: str) -> None:
-            self.status_message.emit(f"錯誤：{msg}")
-            self._remove_worker(worker)
-            self._refresh_all_panels()
-            dialog.accept()
-
-        worker.finished.connect(_on_done)
-        worker.error.connect(_on_error)
-
-        self._workers.append(worker)
-        worker.start()
-        dialog.exec()
-
-    def _copy_to(self, sources: list[str], destination: str):
-        self._start_file_operation("copy", sources, destination)
-
-    def _move_to(self, sources: list[str], destination: str):
-        self._start_file_operation("move", sources, destination)
-
-    def _on_files_dropped(self, paths: list[str], modifiers, target_dir: str) -> None:
-        """Handle files dropped onto this panel (from another panel or Explorer).
-
-        Modifier keys follow Windows Explorer convention:
-          * Ctrl        → Copy
-          * Shift       → Move
-          * (none)      → Move if same drive, Copy across drives
-          * Ctrl+Shift  → Copy (shortcut creation not implemented)
-        """
-        self.activated.emit(self.panel_id)
-
-        dest = os.path.normpath(target_dir) if target_dir else self.current_path()
-        if not dest or not os.path.isdir(dest):
+    def _queue_transfer(self, op: str, sources: list[str], destination: str) -> None:
+        """Hand copy/move to the shared queue; progress shows in the queue window."""
+        if not destination or not os.path.isdir(destination):
             self.status_message.emit("目標資料夾不存在")
             return
-
+        dest = os.path.normcase(os.path.normpath(destination))
         valid: list[str] = []
-        for raw in paths:
-            if not raw:
-                continue
+        for raw in sources:
             norm = os.path.normpath(raw)
-            if not os.path.exists(norm):
+            if not os.path.lexists(norm):
                 continue
-            # Skip dropping into the same folder
-            if os.path.dirname(norm) == dest:
-                continue
-            # Prevent dropping a folder into itself or one of its children
-            if os.path.isdir(norm):
-                dest_with_sep = dest + os.sep
-                if dest == norm or dest_with_sep.startswith(norm + os.sep):
+            if op == "move" and os.path.normcase(os.path.dirname(norm)) == dest:
+                continue  # moving into the folder it is already in does nothing
+            if os.path.isdir(norm) and not os.path.islink(norm):
+                src = os.path.normcase(norm)
+                if dest == src or dest.startswith(src + os.sep):
                     self.status_message.emit(
-                        f"無法將「{os.path.basename(norm)}」拖入其自身或子資料夾"
+                        f"無法將「{os.path.basename(norm)}」放入其自身或子資料夾"
                     )
                     return
             valid.append(norm)
-
         if not valid:
             return
 
-        ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        def _on_done(result) -> None:
+            self._refresh_all_panels()
+            self.status_message.emit(result.message)
 
-        if ctrl:
-            operation = "copy"
-        elif shift:
-            operation = "move"
-        else:
-            src_drive = os.path.splitdrive(valid[0])[0].lower()
-            dest_drive = os.path.splitdrive(dest)[0].lower()
-            operation = "move" if src_drive == dest_drive else "copy"
+        verify = bool(self.prefs.get("verify_after_copy", False))
+        self.queue.enqueue(op, valid, os.path.normpath(destination), verify, _on_done)
+        verb = "複製" if op == "copy" else "移動"
+        self.status_message.emit(f"已加入佇列：{verb} {len(valid)} 個項目")
 
-        if operation == "copy":
+    def _copy_to(self, sources: list[str], destination: str):
+        self._queue_transfer("copy", sources, destination)
+
+    def _move_to(self, sources: list[str], destination: str):
+        self._queue_transfer("move", sources, destination)
+
+    def _on_files_dropped(self, paths: list[str], modifiers, target_dir: str) -> None:
+        """Files dropped onto this panel (from another panel or Explorer).
+
+        Explorer convention (C06): Ctrl copies, Shift moves, otherwise a drop on
+        the same drive moves and a drop on another drive copies.
+        """
+        self.activated.emit(self.panel_id)
+        dest = os.path.normpath(target_dir) if target_dir else self.current_path()
+        valid = [os.path.normpath(p) for p in paths if p]
+        if not valid:
+            return
+        if drop_operation(valid, dest, modifiers) == "copy":
             self._copy_to(valid, dest)
         else:
             self._move_to(valid, dest)
@@ -307,8 +288,39 @@ class FilePanelActionsMixin:
         )
         if reply == QMessageBox.StandardButton.Yes:
             ok, msg = delete_to_trash(paths)
-            self._refresh()
-            self.status_message.emit(msg)
+            gone = [p for p in paths if not os.path.lexists(p)]
+            undo_stack.push(f"刪除 {len(gone)} 個項目", trash_records(gone))
+            self._refresh_all_panels()
+            self.status_message.emit(msg if ok else f"刪除失敗：{msg}")
+
+    def _delete_permanent(self, paths: list[str]) -> None:
+        """C08: Shift+Delete skips the recycle bin, after an explicit warning."""
+        names = "、".join(os.path.basename(p) for p in paths[:3])
+        if len(paths) > 3:
+            names += f" 等 {len(paths)} 個項目"
+        reply = QMessageBox.warning(
+            self,
+            "永久刪除",
+            f"確定要永久刪除 {names} 嗎？\n\n不會放入資源回收筒，刪除後無法復原。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        errors: list[str] = []
+        for p in paths:
+            try:
+                remove_path(p)
+            except OSError as e:
+                errors.append(f"{os.path.basename(p)}: {e}")
+        self._refresh_all_panels()
+        done = len(paths) - len(errors)
+        if errors:
+            self.status_message.emit(
+                f"已永久刪除 {done} 個，失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
+            )
+        else:
+            self.status_message.emit(f"已永久刪除 {done} 個項目")
 
     def _compress_to_zip(self, paths: list[str]) -> None:
         if not paths:
@@ -473,6 +485,10 @@ class FilePanelActionsMixin:
             new_path = os.path.join(os.path.dirname(path), new_name)
             try:
                 os.rename(os.path.normpath(path), os.path.normpath(new_path))
+                undo_stack.push(
+                    f"重新命名 {old_name}",
+                    [("renamed", os.path.normpath(path), os.path.normpath(new_path))],
+                )
                 self._refresh()
                 display = new_name[:-4] if new_name.lower().endswith(".lnk") else new_name
                 self.status_message.emit(f"已重新命名為：{display}")
@@ -481,15 +497,15 @@ class FilePanelActionsMixin:
 
     def _batch_rename(self):
         # Number files following the current visual (sorted) order
-        indexes = sorted(self.tree.selectionModel().selectedRows(), key=lambda idx: idx.row())
-        paths = [self.model.file_path(idx) for idx in indexes]
-        paths = [p for p in paths if p and os.path.exists(p)]
+        paths = [p for p in self._get_selected_paths() if os.path.lexists(p)]
         if len(paths) < 2:
             return
         dlg = BatchRenameDialog(paths, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        success, errors = execute_batch_rename(dlg.rename_pairs())
+        pairs = dlg.rename_pairs()
+        success, errors = execute_batch_rename(pairs)
+        self._push_batch_rename_undo(pairs)
         self._refresh()
         if errors:
             self.status_message.emit(
@@ -498,12 +514,24 @@ class FilePanelActionsMixin:
         else:
             self.status_message.emit(f"已批次重新命名 {success} 個項目")
 
+    def _push_batch_rename_undo(self, pairs: list[tuple[str, str]]) -> None:
+        # Undo renames back one by one; that only works when no new name is
+        # also an old name in the same batch (e.g. shifted sequence numbers).
+        olds = {os.path.normcase(s) for s, _ in pairs}
+        if any(os.path.normcase(d) in olds for _, d in pairs):
+            return
+        records = [
+            ("renamed", s, d) for s, d in pairs if os.path.lexists(d) and not os.path.lexists(s)
+        ]
+        undo_stack.push(f"批次重新命名 {len(records)} 個項目", records)
+
     def _new_folder(self, parent_dir: str):
         name, ok = QInputDialog.getText(self, "新增資料夾", "資料夾名稱：", text="新資料夾")
         if ok and name:
             new_path = os.path.join(parent_dir, name)
             try:
                 os.makedirs(new_path, exist_ok=False)
+                undo_stack.push(f"新增資料夾 {name}", [("created", new_path)])
                 self._refresh()
                 self.status_message.emit(f"已建立資料夾：{name}")
             except OSError as e:
@@ -521,6 +549,7 @@ class FilePanelActionsMixin:
                     return
                 with open(new_path, "w", encoding="utf-8"):
                     pass
+                undo_stack.push(f"新增檔案 {name}", [("created", new_path)])
                 self._refresh()
                 self.status_message.emit(f"已建立檔案：{name}")
                 subprocess.Popen(["notepad.exe", new_path])
@@ -548,10 +577,55 @@ class FilePanelActionsMixin:
         except Exception as e:
             QMessageBox.warning(self, "錯誤", f"建立捷徑失敗：{e}")
 
+    def _create_link(self, target: str, kind: str) -> None:
+        """C12: create a junction or symbolic link to `target` in a chosen folder."""
+        start = next(
+            (p.current_path() for p in self.other_panels if p.isVisible() and p.current_path()),
+            os.path.dirname(target),
+        )
+        title = (
+            "建立 Junction：選擇放置位置" if kind == "junction" else "建立符號連結：選擇放置位置"
+        )
+        folder = QFileDialog.getExistingDirectory(self, title, start)
+        if not folder:
+            return
+        link = unique_name(os.path.join(os.path.normpath(folder), os.path.basename(target)))
+        try:
+            if kind == "junction":
+                import _winapi
+
+                _winapi.CreateJunction(os.path.normpath(target), link)
+            else:
+                os.symlink(target, link, target_is_directory=os.path.isdir(target))
+        except OSError as e:
+            if kind == "symlink" and getattr(e, "winerror", None) == 1314:
+                QMessageBox.warning(
+                    self,
+                    "建立符號連結失敗",
+                    "建立符號連結需要系統管理員權限，或在 Windows 設定開啟「開發人員模式」。\n"
+                    "資料夾可改用 Junction，不需要特殊權限。",
+                )
+            else:
+                QMessageBox.warning(self, "建立連結失敗", str(e))
+            return
+        undo_stack.push(f"建立連結 {os.path.basename(link)}", [("created", link)])
+        self._refresh_all_panels()
+        self.status_message.emit(f"已建立連結：{link}")
+
     def _copy_path(self, paths: list[str]):
         text = "\n".join(paths)
         QApplication.clipboard().setText(text)
         self.status_message.emit(f"已複製 {len(paths)} 個路徑")
+
+    def _copy_text_variant(self, paths: list[str], variant: str) -> None:
+        """C11: file name only, forward-slash path or quoted path."""
+        formats = {
+            "name": os.path.basename,
+            "slash": lambda p: os.path.normpath(p).replace("\\", "/"),
+            "quoted": lambda p: f'"{os.path.normpath(p)}"',
+        }
+        QApplication.clipboard().setText("\n".join(formats[variant](p) for p in paths))
+        self.status_message.emit(f"已複製 {len(paths)} 筆到剪貼簿")
 
     def _calculate_hash(self, paths: list[str]) -> None:
         files = [p for p in paths if os.path.isfile(p)]

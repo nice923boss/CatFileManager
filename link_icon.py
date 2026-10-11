@@ -6,7 +6,9 @@ from PySide6.QtCore import QFileInfo, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFileIconProvider
 
-_SIZES = (16, 20, 24, 32, 48)
+_SIZES = (16, 20, 24, 32, 48, 64, 96, 128)
+_overlay_cache: dict[int, QIcon] = {}
+_OVERLAY_CACHE_MAX = 256
 
 
 def _draw_badge(painter: QPainter, size: int):
@@ -39,6 +41,9 @@ def link_target(path: str) -> str | None:
 
 def with_link_overlay(base: QIcon) -> QIcon:
     """Return a copy of `base` with the link arrow badge painted on every size."""
+    cached = _overlay_cache.get(base.cacheKey())
+    if cached is not None:
+        return cached
     out = QIcon()
     for size in _SIZES:
         src = base.pixmap(size, size)
@@ -50,6 +55,9 @@ def with_link_overlay(base: QIcon) -> QIcon:
         _draw_badge(painter, size)
         painter.end()
         out.addPixmap(pm)
+    if len(_overlay_cache) >= _OVERLAY_CACHE_MAX:
+        _overlay_cache.pop(next(iter(_overlay_cache)))
+    _overlay_cache[base.cacheKey()] = out
     return out
 
 

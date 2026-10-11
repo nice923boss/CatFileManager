@@ -86,12 +86,6 @@ class BatchRenameDialog(QDialog):
         self.setWindowTitle(f"批次重新命名（{len(paths)} 個項目）")
         self.setMinimumWidth(460)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
-        self.setStyleSheet(
-            "QSpinBox { background-color: #3c3c3c; color: #cccccc;"
-            "  border: 1px solid #3e3e3e; padding: 2px 6px; }"
-            "QPlainTextEdit { background-color: #252526; color: #cccccc;"
-            "  border: 1px solid #3e3e3e; }"
-        )
 
         layout = QVBoxLayout(self)
 
@@ -122,7 +116,7 @@ class BatchRenameDialog(QDialog):
         layout.addWidget(self._preview)
 
         self._hint = QLabel("")
-        self._hint.setStyleSheet("color: #d9534f;")
+        self._hint.setObjectName("errorHint")
         layout.addWidget(self._hint)
 
         self._buttons = QDialogButtonBox(

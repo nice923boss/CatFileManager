@@ -36,16 +36,11 @@ class FavoritesWidget(QWidget):
         layout.setSpacing(0)
 
         header = QLabel("  \u2605 \u6211\u7684\u6700\u611b")
-        header.setStyleSheet(
-            "background-color: #2d2d2d; color: #e8b84b; "
-            "padding: 6px 4px; font-size: 13px; font-weight: bold;"
-        )
+        header.setObjectName("favHeader")
         layout.addWidget(header)
 
         self.list_widget = QListWidget()
-        self.list_widget.setStyleSheet(
-            "QListWidget { font-size: 14px; } QListWidget::item { padding: 4px 2px; }"
-        )
+        self.list_widget.setObjectName("favorites")
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
@@ -180,9 +175,7 @@ class RecycleBinWidget(QWidget):
         layout.setSpacing(0)
 
         self.label = QLabel("  \ud83d\uddd1 \u8cc7\u6e90\u56de\u6536\u7b52")
-        self.label.setStyleSheet(
-            "background-color: #252526; color: #cccccc; padding: 8px 4px; font-size: 13px;"
-        )
+        self.label.setObjectName("recycleLabel")
         self.label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.label.customContextMenuRequested.connect(self._show_context_menu)
@@ -262,10 +255,7 @@ class TreePanel(QWidget):
         tree_layout.setSpacing(0)
 
         header = QLabel("  \u76ee\u9304")
-        header.setStyleSheet(
-            "background-color: #2d2d2d; color: #cccccc; "
-            "padding: 6px 4px; font-size: 13px; font-weight: bold;"
-        )
+        header.setObjectName("sectionHeader")
         tree_layout.addWidget(header)
 
         self.tree = QTreeView()

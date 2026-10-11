@@ -17,7 +17,7 @@ from file_operations import HashCalculateWorker
 
 
 class FileProgressDialog(QDialog):
-    """Progress dialog for file copy/move operations."""
+    """Progress dialog for ZIP compression (copy/move run in the operation queue)."""
 
     def __init__(self, operation: str, total: int, parent=None):
         super().__init__(parent)
@@ -33,7 +33,7 @@ class FileProgressDialog(QDialog):
         layout.addWidget(self._label_op)
 
         self._label_file = QLabel("")
-        self._label_file.setStyleSheet("color: gray;")
+        self._label_file.setObjectName("dimText")
         layout.addWidget(self._label_file)
 
         self._progress = QProgressBar()
@@ -88,7 +88,7 @@ class HashDialog(QDialog):
         layout.addWidget(self._label_status)
 
         self._label_file = QLabel("")
-        self._label_file.setStyleSheet("color: gray;")
+        self._label_file.setObjectName("dimText")
         layout.addWidget(self._label_file)
 
         self._progress = QProgressBar()

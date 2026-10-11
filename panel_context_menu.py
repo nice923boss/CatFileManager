@@ -1,4 +1,9 @@
-"""Right-click context menu construction for FilePanel (mixin)."""
+"""Right-click context menu construction for FilePanel (mixin).
+
+Every entry has an id in :data:`CONTEXT_MENU_ITEMS`; the user can hide entries
+and change their order in the settings dialog (F04). Separators are entries
+too, so the user decides where the groups break.
+"""
 
 import os
 import subprocess
@@ -12,8 +17,59 @@ from shell_utils import (
     _get_open_with_apps,
     _get_send_to_items,
     _remove_open_with_app,
+    _resolve_lnk_target,
     _show_file_properties,
 )
+
+SEPARATOR_PREFIX = "sep_"
+
+# (id, label shown in the settings dialog), in the default order.
+CONTEXT_MENU_ITEMS = (
+    ("open_cmd", "在此開啟 CMD"),
+    ("open_powershell", "在此開啟 PowerShell"),
+    ("open_terminal", "在此開啟 Windows Terminal"),
+    ("new_folder", "新增資料夾"),
+    ("new_textfile", "新增記事本"),
+    ("sep_1", "分隔線"),
+    ("open_real", "開啟實際位置（連結）"),
+    ("open_in_panel", "在面板 N 開啟"),
+    ("open_with", "開啟方式"),
+    ("run_as_admin", "以系統管理員身分開啟"),
+    ("send_to", "傳送到"),
+    ("sep_2", "分隔線"),
+    ("copy_to", "複製到"),
+    ("move_to", "移動到"),
+    ("sep_3", "分隔線"),
+    ("delete", "刪除（移至資源回收筒）"),
+    ("delete_permanent", "永久刪除"),
+    ("zip", "壓縮成 ZIP"),
+    ("extract", "解壓縮全部"),
+    ("rename", "重新命名"),
+    ("sep_4", "分隔線"),
+    ("copy_path", "複製路徑"),
+    ("copy_as", "複製為（檔名、正斜線路徑、含引號路徑）"),
+    ("hash", "計算哈希值"),
+    ("shortcut", "建立捷徑"),
+    ("new_link", "建立 Junction／符號連結"),
+    ("sep_5", "分隔線"),
+    ("favorite", "加入我的最愛"),
+    ("sep_6", "分隔線"),
+    ("properties", "內容"),
+)
+
+_VIDEO_EXTS = {
+    ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv",
+    ".webm", ".m4v", ".mpg", ".mpeg", ".ts", ".vob",
+}  # fmt: skip
+_ARCHIVE_SIMPLE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
+_ARCHIVE_COMPOUND_EXTS = (".tar.gz", ".tar.bz2", ".tar.xz")
+
+
+def ordered_menu_ids(order: list[str]) -> list[str]:
+    """The user's saved order, with unknown ids dropped and new ids appended."""
+    known = [item_id for item_id, _ in CONTEXT_MENU_ITEMS]
+    ids = [i for i in order if i in known]
+    return ids + [i for i in known if i not in ids]
 
 
 class _OpenWithMenu(QMenu):
@@ -61,180 +117,94 @@ class FilePanelContextMenuMixin:
     """Builds the file-list right-click menu and its Open-With submenu actions.
 
     Designed to be mixed into :class:`FilePanel`; every method relies on
-    attributes/methods provided by the host panel (``self.tree``, ``self.model``,
+    attributes/methods provided by the host panel (``self.view()``, ``self.model``,
     ``self.other_panels``, ``self._copy_to`` …) resolved via the final MRO.
     """
 
     def _show_context_menu(self, pos):
         self.activated.emit(self.panel_id)
+        selected = self._get_selected_paths()
+        here = self.current_path()
+        hidden = set(self.prefs.get("context_menu_hidden", []))
 
         menu = QMenu(self)
-        selected = self._get_selected_paths()
-        current_dir = self.current_path()
-
-        act_cmd = QAction("在此開啟 CMD", self)
-        act_cmd.triggered.connect(lambda: self._open_cmd(current_dir))
-        menu.addAction(act_cmd)
-
-        # New folder
-        act_new_folder = QAction("新增資料夾", self)
-        act_new_folder.triggered.connect(lambda: self._new_folder(current_dir))
-        menu.addAction(act_new_folder)
-
-        # New text file (notepad)
-        act_new_txt = QAction("新增記事本", self)
-        act_new_txt.triggered.connect(lambda: self._new_textfile(current_dir))
-        menu.addAction(act_new_txt)
-
-        menu.addSeparator()
-
-        if selected:
-            target = link_target(selected[0]) if len(selected) == 1 else None
-            if target and os.path.isdir(target):
-                act_real = QAction(f"開啟實際位置（{target}）", self)
-                act_real.triggered.connect(lambda checked=False, p=target: self.navigate_to(p))
-                menu.addAction(act_real)
+        pending_separator = False
+        for item_id in ordered_menu_ids(self.prefs.get("context_menu_order", [])):
+            if item_id in hidden:
+                continue
+            if item_id.startswith(SEPARATOR_PREFIX):
+                pending_separator = True
+                continue
+            entries = self._menu_entries(item_id, selected, here)
+            if not entries:
+                continue
+            if pending_separator and not menu.isEmpty():
                 menu.addSeparator()
+            pending_separator = False
+            for entry in entries:
+                if isinstance(entry, QMenu):
+                    menu.addMenu(entry)
+                else:
+                    menu.addAction(entry)
+        if not menu.isEmpty():
+            menu.exec(self.view().viewport().mapToGlobal(pos))
 
-            if len(selected) == 1 and os.path.isfile(selected[0]):
-                ext = os.path.splitext(selected[0])[1].lower()
-                apps = _get_open_with_apps(ext)
+    def _action(self, label: str, slot) -> QAction:
+        act = QAction(label, self)
+        act.triggered.connect(lambda checked=False: slot())
+        return act
 
-                # Right-click a registry-sourced app entry to remove it.
-                open_with_menu = _OpenWithMenu("開啟方式", self, self._open_with_remove, ext)
+    def _target_panels(self) -> list:
+        return [p for p in self.other_panels if p.isVisible() and p.current_path()]
 
-                act_default = QAction("預設程式", self)
-                file_path = selected[0]
-                act_default.triggered.connect(
-                    lambda checked=False, p=file_path: self._shell_open(p)
-                )
-                open_with_menu.addAction(act_default)
+    def _menu_entries(self, item_id: str, selected: list[str], here: str) -> list:
+        """QActions / QMenus for one item id; empty when it doesn't apply."""
+        single = selected[0] if len(selected) == 1 else ""
+        sel = list(selected)
 
-                open_with_menu.addSeparator()
+        # Items that act on the current folder (shown with or without selection)
+        if item_id == "open_cmd":
+            return [self._action("在此開啟 CMD", lambda: self._open_cmd(here))]
+        if item_id == "open_powershell":
+            return [self._action("在此開啟 PowerShell", lambda: self._open_powershell(here))]
+        if item_id == "open_terminal":
+            return [self._action("在此開啟 Windows Terminal", lambda: self._open_terminal(here))]
+        if item_id == "new_folder":
+            return [self._action("新增資料夾", lambda: self._new_folder(here))]
+        if item_id == "new_textfile":
+            return [self._action("新增記事本", lambda: self._new_textfile(here))]
 
-                act_notepad = QAction("記事本", self)
-                act_notepad.triggered.connect(
-                    lambda checked=False, p=file_path: subprocess.Popen(["notepad.exe", p])
-                )
-                open_with_menu.addAction(act_notepad)
+        if not selected:
+            return []
 
-                if apps:
-                    open_with_menu.addSeparator()
-                    for app_name, app_cmd in apps[:10]:
-                        act_app = QAction(app_name, self)
-                        # Marks this as a removable, registry-sourced entry;
-                        # fixed entries above carry no data().
-                        act_app.setData(app_name)
-                        act_app.triggered.connect(
-                            lambda checked=False, c=app_cmd, p=file_path: self._open_with(c, p)
-                        )
-                        open_with_menu.addAction(act_app)
-
-                open_with_menu.addSeparator()
-                act_choose = QAction("選擇其他程式...", self)
-                act_choose.triggered.connect(
-                    lambda checked=False, p=file_path: self._open_with_dialog(p)
-                )
-                open_with_menu.addAction(act_choose)
-
-                menu.addMenu(open_with_menu)
-
-                act_admin = QAction("以系統管理員身分開啟", self)
-                act_admin.triggered.connect(
-                    lambda checked=False, p=file_path: self._run_as_admin(p)
-                )
-                menu.addAction(act_admin)
-
-            send_to_menu = QMenu("傳送到", self)
-            act_clip = QAction("剪貼簿（複製檔案）", self)
-            paths_copy = list(selected)
-            act_clip.triggered.connect(
-                lambda checked=False, p=paths_copy: self._copy_files_to_clipboard(p)
-            )
-            send_to_menu.addAction(act_clip)
-            send_to_menu.addSeparator()
-
-            # HandBrake for video files
-            _VIDEO_EXTS = {
-                ".mp4",
-                ".mkv",
-                ".avi",
-                ".mov",
-                ".wmv",
-                ".flv",
-                ".webm",
-                ".m4v",
-                ".mpg",
-                ".mpeg",
-                ".ts",
-                ".vob",
-            }
-            video_files = [
-                p
-                for p in selected
-                if os.path.isfile(p) and os.path.splitext(p)[1].lower() in _VIDEO_EXTS
-            ]
-            if video_files:
-                act_handbrake = QAction("HandBrake", self)
-                act_handbrake.triggered.connect(
-                    lambda checked=False, p=video_files: self._open_with_handbrake(p[0])
-                )
-                send_to_menu.addAction(act_handbrake)
-                send_to_menu.addSeparator()
-
-            send_to_items = _get_send_to_items()
-            for display, shortcut_path in send_to_items:
-                act_send = QAction(display, self)
-                act_send.triggered.connect(
-                    lambda checked=False, s=shortcut_path, p=paths_copy: self._send_to(s, p)
-                )
-                send_to_menu.addAction(act_send)
-            menu.addMenu(send_to_menu)
-
-            menu.addSeparator()
-
-            copy_menu = QMenu("複製到", self)
-            for panel in self.other_panels:
-                target_path = panel.current_path()
-                label = (
-                    f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
-                )
-                act_copy = QAction(label, self)
-                act_copy.triggered.connect(
-                    lambda checked=False, s=list(selected), d=target_path: self._copy_to(s, d)
-                )
-                copy_menu.addAction(act_copy)
-            menu.addMenu(copy_menu)
-
-            move_menu = QMenu("移動到", self)
-            for panel in self.other_panels:
-                target_path = panel.current_path()
-                label = (
-                    f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
-                )
-                act_move = QAction(label, self)
-                act_move.triggered.connect(
-                    lambda checked=False, s=list(selected), d=target_path: self._move_to(s, d)
-                )
-                move_menu.addAction(act_move)
-            menu.addMenu(move_menu)
-
-            menu.addSeparator()
-
-            act_del = QAction("刪除（移至資源回收筒）", self)
-            act_del.triggered.connect(lambda: self._delete(selected))
-            menu.addAction(act_del)
-
-            act_zip = QAction("壓縮成 ZIP", self)
-            zip_paths = list(selected)
-            act_zip.triggered.connect(lambda checked=False, p=zip_paths: self._compress_to_zip(p))
-            menu.addAction(act_zip)
-
-            _ARCHIVE_SIMPLE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
-            _ARCHIVE_COMPOUND_EXTS = (".tar.gz", ".tar.bz2", ".tar.xz")
+        if item_id == "open_real":
+            target = link_target(single) if single else None
+            if target and os.path.isdir(target):
+                label = f"開啟實際位置（{target}）"
+                return [self._action(label, lambda: self.navigate_to(target))]
+            return []
+        if item_id == "open_in_panel":
+            return self._open_in_panel_entries(single)
+        if item_id == "open_with":
+            return [self._open_with_menu(single)] if single and os.path.isfile(single) else []
+        if item_id == "run_as_admin":
+            if single and os.path.isfile(single):
+                return [self._action("以系統管理員身分開啟", lambda: self._run_as_admin(single))]
+            return []
+        if item_id == "send_to":
+            return [self._send_to_menu(sel)]
+        if item_id in ("copy_to", "move_to"):
+            return [self._transfer_menu(item_id, sel)]
+        if item_id == "delete":
+            return [self._action("刪除（移至資源回收筒）", lambda: self._delete(sel))]
+        if item_id == "delete_permanent":
+            return [self._action("永久刪除（不經資源回收筒）", lambda: self._delete_permanent(sel))]
+        if item_id == "zip":
+            return [self._action("壓縮成 ZIP", lambda: self._compress_to_zip(sel))]
+        if item_id == "extract":
             archives = [
                 p
-                for p in selected
+                for p in sel
                 if os.path.isfile(p)
                 and (
                     os.path.splitext(p)[1].lower() in _ARCHIVE_SIMPLE_EXTS
@@ -242,65 +212,138 @@ class FilePanelContextMenuMixin:
                 )
             ]
             if archives:
-                act_extract = QAction("解壓縮全部", self)
-                act_extract.triggered.connect(
-                    lambda checked=False, p=list(archives): self._extract_archive(p)
+                return [self._action("解壓縮全部", lambda: self._extract_archive(archives))]
+            return []
+        if item_id == "rename":
+            if single:
+                return [self._action("重新命名", lambda: self._rename(single))]
+            return [self._action("批次重新命名（含序號）", self._batch_rename)]
+        if item_id == "copy_path":
+            return [self._action("複製路徑", lambda: self._copy_path(sel))]
+        if item_id == "copy_as":
+            sub = QMenu("複製為", self)
+            for label, variant in (
+                ("檔名", "name"),
+                ("正斜線路徑（C:/…）", "slash"),
+                ('含引號路徑（"C:\\…"）', "quoted"),
+            ):
+                sub.addAction(
+                    self._action(label, lambda v=variant: self._copy_text_variant(sel, v))
                 )
-                menu.addAction(act_extract)
-
-            if len(selected) == 1:
-                act_rename = QAction("重新命名", self)
-                act_rename.triggered.connect(lambda: self._rename(selected[0]))
-                menu.addAction(act_rename)
-            else:
-                act_batch = QAction("批次重新命名（含序號）", self)
-                act_batch.triggered.connect(self._batch_rename)
-                menu.addAction(act_batch)
-
-            menu.addSeparator()
-
-            act_path = QAction("複製路徑", self)
-            act_path.triggered.connect(lambda: self._copy_path(selected))
-            menu.addAction(act_path)
-
-            files_only = [p for p in selected if os.path.isfile(p)]
-            if files_only:
-                act_hash = QAction("計算哈希值", self)
-                hash_paths = list(files_only)
-                act_hash.triggered.connect(
-                    lambda checked=False, p=hash_paths: self._calculate_hash(p)
-                )
-                menu.addAction(act_hash)
-
-            if len(selected) == 1:
-                act_shortcut = QAction("建立捷徑", self)
-                act_shortcut.triggered.connect(
-                    lambda checked=False, p=selected[0]: self._create_shortcut(p)
-                )
-                menu.addAction(act_shortcut)
-
-            folders = [p for p in selected if os.path.isdir(p)]
-            if folders:
-                menu.addSeparator()
-                for folder in folders:
-                    folder_name = os.path.basename(folder) or folder
-                    act_fav = QAction(f"★ 加入我的最愛：{folder_name}", self)
-                    act_fav.triggered.connect(
-                        lambda checked=False, p=folder: self.add_to_favorites.emit(p)
+            return [sub]
+        if item_id == "hash":
+            files = [p for p in sel if os.path.isfile(p)]
+            return (
+                [self._action("計算哈希值", lambda: self._calculate_hash(files))] if files else []
+            )
+        if item_id == "shortcut":
+            return (
+                [self._action("建立捷徑", lambda: self._create_shortcut(single))] if single else []
+            )
+        if item_id == "new_link":
+            if not single:
+                return []
+            sub = QMenu("建立連結", self)
+            if os.path.isdir(single):
+                sub.addAction(
+                    self._action(
+                        "Junction（資料夾，免權限）", lambda: self._create_link(single, "junction")
                     )
-                    menu.addAction(act_fav)
-
-            menu.addSeparator()
-            act_props = QAction("內容", self)
-            if len(selected) == 1:
-                act_props.triggered.connect(
-                    lambda checked=False, p=selected[0]: _show_file_properties(p)
                 )
-            else:
-                act_props.setEnabled(False)
-            menu.addAction(act_props)
+            sub.addAction(self._action("符號連結", lambda: self._create_link(single, "symlink")))
+            return [sub]
+        if item_id == "favorite":
+            return [
+                self._action(
+                    f"★ 加入我的最愛：{os.path.basename(f) or f}",
+                    lambda f=f: self.add_to_favorites.emit(f),
+                )
+                for f in sel
+                if os.path.isdir(f)
+            ]
+        if item_id == "properties":
+            act = self._action("內容", lambda: _show_file_properties(single))
+            act.setEnabled(bool(single))
+            return [act]
+        return []
 
-        menu.exec(self.tree.viewport().mapToGlobal(pos))
+    def _open_in_panel_entries(self, single: str) -> list:
+        """B06: open the selected folder (or a link's target folder) in another panel."""
+        if not single:
+            return []
+        folder = link_target(single) or single
+        if single.lower().endswith(".lnk"):
+            folder = _resolve_lnk_target(single)
+        if not os.path.isdir(folder):
+            return []
+
+        def open_in(panel) -> None:
+            panel.navigate_to(folder)
+            panel.activated.emit(panel.panel_id)
+
+        return [
+            self._action(f"在面板 {p.panel_id + 1} 開啟", lambda p=p: open_in(p))
+            for p in self.other_panels
+            if p.isVisible()
+        ]
+
+    def _transfer_menu(self, item_id: str, sel: list[str]) -> QMenu:
+        title = "複製到" if item_id == "copy_to" else "移動到"
+        slot = self._copy_to if item_id == "copy_to" else self._move_to
+        sub = QMenu(title, self)
+        for panel in self._target_panels():
+            dest = panel.current_path()
+            label = f"面板 {panel.panel_id + 1}  ({os.path.basename(dest) or dest})"
+            sub.addAction(self._action(label, lambda d=dest: slot(sel, d)))
+        sub.setEnabled(not sub.isEmpty())
+        return sub
+
+    def _send_to_menu(self, sel: list[str]) -> QMenu:
+        send_to_menu = QMenu("傳送到", self)
+        send_to_menu.addAction(
+            self._action("剪貼簿（複製檔案）", lambda: self._copy_files_to_clipboard(sel))
+        )
+        send_to_menu.addSeparator()
+
+        video_files = [
+            p for p in sel if os.path.isfile(p) and os.path.splitext(p)[1].lower() in _VIDEO_EXTS
+        ]
+        if video_files:
+            send_to_menu.addAction(
+                self._action("HandBrake", lambda: self._open_with_handbrake(video_files[0]))
+            )
+            send_to_menu.addSeparator()
+
+        for display, shortcut_path in _get_send_to_items():
+            send_to_menu.addAction(
+                self._action(display, lambda s=shortcut_path: self._send_to(s, sel))
+            )
+        return send_to_menu
+
+    def _open_with_menu(self, file_path: str) -> QMenu:
+        ext = os.path.splitext(file_path)[1].lower()
+        apps = _get_open_with_apps(ext)
+
+        # Right-click a registry-sourced app entry to remove it.
+        open_with_menu = _OpenWithMenu("開啟方式", self, self._open_with_remove, ext)
+        open_with_menu.addAction(self._action("預設程式", lambda: self._shell_open(file_path)))
+        open_with_menu.addSeparator()
+        open_with_menu.addAction(
+            self._action("記事本", lambda: subprocess.Popen(["notepad.exe", file_path]))
+        )
+        if apps:
+            open_with_menu.addSeparator()
+            for app_name, app_cmd in apps[:10]:
+                act_app = self._action(app_name, lambda c=app_cmd: self._open_with(c, file_path))
+                # Marks this as a removable, registry-sourced entry;
+                # fixed entries above carry no data().
+                act_app.setData(app_name)
+                open_with_menu.addAction(act_app)
+        open_with_menu.addSeparator()
+        open_with_menu.addAction(
+            self._action("選擇其他程式...", lambda: self._open_with_dialog(file_path))
+        )
+        return open_with_menu
 
     def _open_with_remove(self, menu: QMenu, action: QAction, global_pos, ext: str):
         """Offer to remove a right-clicked Open-With entry from the list."""

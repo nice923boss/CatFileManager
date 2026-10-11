@@ -4,16 +4,20 @@ Qt's QFileSystemModel has a known bug where it treats .lnk files as symlinks
 and silently drops them if the target resolution fails. This model uses
 os.scandir() directly to avoid that issue.
 
-Large directories are scanned in a background thread to prevent UI freezing.
+Directories are scanned and sorted in a background thread, and per-file icons
+(.exe, .ico, .lnk …) are fetched in another background thread, so huge
+folders never freeze the UI.
 """
 
-import ctypes
 import os
 import re
+import stat as stat_mod
 import time
+from collections import OrderedDict
 
 from PySide6.QtCore import (
     QAbstractItemModel,
+    QFileInfo,
     QFileSystemWatcher,
     QMimeData,
     QModelIndex,
@@ -23,14 +27,38 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import QFileIconProvider
 
-from link_icon import with_link_overlay
+from file_types import category
+from icon_loader import icon_loader
+from link_icon import link_target, with_link_overlay
+from shell_utils import _resolve_lnk_target
 
-_FILE_ATTRIBUTE_HIDDEN = 0x2
-_FILE_ATTRIBUTE_SYSTEM = 0x4
+_HIDDEN_MASK = stat_mod.FILE_ATTRIBUTE_HIDDEN | stat_mod.FILE_ATTRIBUTE_SYSTEM
 _icon_provider = QFileIconProvider()
+
+# Extensions whose icon differs per file; everything else shares one icon per
+# extension, which turns thousands of shell calls into a handful (J01).
+_PER_FILE_ICON_EXTS = frozenset(
+    {".exe", ".ico", ".lnk", ".url", ".cur", ".ani", ".scr", ".cpl", ".msc"}
+)
+
+# Per-file icons are shared across folders and panels with an LRU cap (J02).
+_FILE_ICON_CACHE_MAX = 1024
+_file_icon_cache: OrderedDict[str, QIcon] = OrderedDict()
+_ext_icon_cache: dict[str, QIcon] = {}
+_folder_icon: QIcon | None = None
+
+_SCAN_PROGRESS_EVERY = 5000
+
+# Icon sizes at or above this show image/video thumbnails instead of icons.
+THUMBNAIL_MIN_SIZE = 48
+
+
+def _cache_key(path: str, size: int, icon_only: bool) -> str:
+    return f"{size}|{'i' if icon_only else 't'}|{path}"
+
 
 _NUM_RE = re.compile(r"(\d+)")
 
@@ -57,42 +85,21 @@ def _format_size(size: int) -> str:
         return f"{size / (1024 * 1024 * 1024):.2f} GB"
 
 
-def _is_hidden(path: str) -> bool:
-    try:
-        attrs = ctypes.windll.kernel32.GetFileAttributesW(path)
-        if attrs != -1 and (attrs & _FILE_ATTRIBUTE_HIDDEN or attrs & _FILE_ATTRIBUTE_SYSTEM):
-            return True
-    except (OSError, ValueError):
-        pass
-    return False
-
-
-def _resolve_lnk_icon(lnk_path: str) -> QIcon | None:
-    """Get the icon of the .lnk target using Windows Shell COM."""
-    try:
-        import win32com.client
-
-        shell = win32com.client.Dispatch("WScript.Shell")
-        sc = shell.CreateShortCut(lnk_path)
-        target = sc.TargetPath
-        if target and os.path.exists(target):
-            from PySide6.QtCore import QFileInfo
-
-            return _icon_provider.icon(QFileInfo(target))
-        icon_loc = sc.IconLocation
-        if icon_loc and "," in icon_loc:
-            ico_path = icon_loc.rsplit(",", 1)[0].strip()
-            if ico_path and os.path.exists(ico_path):
-                from PySide6.QtCore import QFileInfo
-
-                return _icon_provider.icon(QFileInfo(ico_path))
-    except Exception:
-        pass
-    return None
-
-
 class FileEntry:
-    __slots__ = ("name", "path", "is_dir", "size", "modified", "ext", "is_link", "_icon")
+    __slots__ = (
+        "name",
+        "path",
+        "is_dir",
+        "size",
+        "modified",
+        "ext",
+        "is_link",
+        "link_kind",
+        "hidden",
+        "broken",
+        "_icon",
+        "_tip",
+    )
 
     def __init__(
         self,
@@ -103,6 +110,9 @@ class FileEntry:
         modified: float,
         ext: str,
         is_link: bool = False,
+        link_kind: str = "",
+        hidden: bool = False,
+        broken: bool = False,
     ):
         self.name = name
         self.path = path
@@ -111,17 +121,123 @@ class FileEntry:
         self.modified = modified
         self.ext = ext
         self.is_link = is_link  # NTFS junction or symlink
+        self.link_kind = link_kind  # "junction" | "symlink" | ""
+        self.hidden = hidden  # hidden or system attribute
+        self.broken = broken  # link whose target no longer exists
         self._icon: QIcon | None = None
+        self._tip: str | None = None
+
+
+def scan_entry(entry: os.DirEntry) -> FileEntry:
+    """Build a FileEntry from a DirEntry (raises OSError if it vanished)."""
+    # On Windows DirEntry.stat(follow_symlinks=False) reuses the FindNextFile
+    # data, so attributes cost no extra syscall.
+    st = entry.stat(follow_symlinks=False)
+    attrs = st.st_file_attributes
+    name = entry.name
+    if entry.is_junction():
+        link_kind = "junction"
+    elif entry.is_symlink():
+        link_kind = "symlink"
+    else:
+        link_kind = ""
+    # A directory symlink is not a dir with follow_symlinks=False; its own
+    # DIRECTORY attribute says what it points at (G04).
+    is_dir = bool(attrs & stat_mod.FILE_ATTRIBUTE_DIRECTORY) and not name.lower().endswith(".lnk")
+    broken = bool(link_kind) and not os.path.exists(entry.path)
+    return FileEntry(
+        name,
+        entry.path,
+        is_dir,
+        st.st_size,
+        st.st_mtime,
+        os.path.splitext(name)[1],
+        bool(link_kind),
+        link_kind,
+        bool(attrs & _HIDDEN_MASK),
+        broken,
+    )
+
+
+def _display_stem(name: str) -> str:
+    return name[:-4] if name.lower().endswith(".lnk") else name
+
+
+def sort_entries(entries: list[FileEntry], col: int, order: Qt.SortOrder) -> None:
+    """Sort in place the way the list view expects."""
+    reverse = order == Qt.SortOrder.DescendingOrder
+
+    # Name: true name order, folders and files intermixed, numeric-aware.
+    # Sort on the displayed name (.lnk stripped) so order matches the column.
+    if col == 0:
+        entries.sort(key=lambda e: _natural_key(_display_stem(e.name)), reverse=reverse)
+        return
+
+    # Date Modified: strict time order, no folder/file grouping.
+    if col == 3:
+        entries.sort(key=lambda e: e.modified, reverse=reverse)
+        return
+
+    # Size / Type: folders stay grouped at the top in BOTH directions.
+    # `reverse` must apply to the column value only, never to the
+    # folder-first grouping -- otherwise a descending sort flips the
+    # whole (dir_priority, value) tuple and sinks folders below files.
+    # Sort by the value first (honoring direction), then stable-sort by
+    # dir_priority ascending so folders stay on top regardless of order.
+    if col == 1:
+        entries.sort(key=lambda e: e.size, reverse=reverse)
+    else:  # col == 2 (Type)
+        entries.sort(key=lambda e: e.ext.lower(), reverse=reverse)
+    entries.sort(key=lambda e: 0 if e.is_dir else 1)
+
+
+def _type_label(entry: FileEntry) -> str:
+    if entry.broken:
+        return "失效連結"
+    if entry.link_kind == "junction":
+        return "Junction"
+    if entry.link_kind == "symlink":
+        return "符號連結（資料夾）" if entry.is_dir else "符號連結"
+    if entry.is_dir:
+        return "資料夾"
+    if entry.name.lower().endswith(".lnk"):
+        return "捷徑"
+    return entry.ext.upper()[1:] if entry.ext else ""
+
+
+def _link_tooltip(entry: FileEntry) -> str | None:
+    """Tooltip "→ target" for junctions, symlinks and .lnk shortcuts (G02)."""
+    if entry._tip is None:
+        target = ""
+        if entry.is_link:
+            target = link_target(entry.path) or ""
+        elif entry.name.lower().endswith(".lnk"):
+            resolved = _resolve_lnk_target(entry.path)
+            target = "" if resolved == entry.path else resolved
+        if target and entry.broken:
+            target += "（目標不存在）"
+        entry._tip = f"→ {target}" if target else ""
+    return entry._tip or None
 
 
 class _ScanWorker(QThread):
-    """Background thread for scanning directories."""
+    """Background thread: list a directory and sort it before handing it over."""
 
-    done = Signal(list)  # list[FileEntry]
+    done = Signal(list)  # list[FileEntry], already sorted
+    progress = Signal(int)  # entries found so far (large folders only)
 
-    def __init__(self, path: str, parent=None):
+    def __init__(
+        self,
+        path: str,
+        show_hidden: bool = False,
+        sort_column: int = 0,
+        sort_order: Qt.SortOrder = Qt.SortOrder.AscendingOrder,
+        parent=None,
+    ):
         super().__init__(parent)
         self._path = path
+        self._show_hidden = show_hidden
+        self._sort = (sort_column, sort_order)
 
     def run(self):
         entries = []
@@ -129,44 +245,47 @@ class _ScanWorker(QThread):
             with os.scandir(self._path) as it:
                 for entry in it:
                     try:
-                        full_path = entry.path
-                        if _is_hidden(full_path):
-                            continue
-                        name = entry.name
-                        is_dir = entry.is_dir(follow_symlinks=False)
-                        if name.lower().endswith(".lnk"):
-                            is_dir = False
-                        stat = entry.stat(follow_symlinks=False)
-                        size = stat.st_size
-                        modified = stat.st_mtime
-                        ext = os.path.splitext(name)[1]
-                        is_link = entry.is_junction() or entry.is_symlink()
-                        entries.append(
-                            FileEntry(name, full_path, is_dir, size, modified, ext, is_link)
-                        )
+                        fe = scan_entry(entry)
                     except OSError:
                         continue
+                    if fe.hidden and not self._show_hidden:
+                        continue
+                    entries.append(fe)
+                    if len(entries) % _SCAN_PROGRESS_EVERY == 0:
+                        self.progress.emit(len(entries))
         except OSError:
             pass
+        sort_entries(entries, *self._sort)
         self.done.emit(entries)
 
 
 class DirectoryModel(QAbstractItemModel):
-    """A flat table model that lists files in a single directory.
+    """A flat table model that lists files in a single directory."""
 
-    Uses os.scandir() in a background thread for large directories.
-    """
+    COLUMNS = ["名稱", "大小", "類型", "修改日期"]
 
-    COLUMNS = ["Name", "Size", "Type", "Date Modified"]
+    scan_progress = Signal(int)  # entries found so far while a big folder loads
+    scan_finished = Signal()
+    root_missing = Signal(str)  # the shown folder disappeared (drive removed …)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._entries: list[FileEntry] = []
+        self._row_of: dict[str, int] = {}
         self._root_path = ""
         self._sort_column = 0
         self._sort_order = Qt.SortOrder.AscendingOrder
         self._scan_worker: _ScanWorker | None = None
-        self._icon_cache: dict[str, QIcon] = {}
+        # Every scan thread stays referenced until it finishes, so dropping a
+        # superseded or completed scan never destroys a running QThread.
+        self._live_workers: list[_ScanWorker] = []
+        self._show_hidden = False
+        self._show_extensions = True
+        self._type_colors: dict[str, QColor] = {}  # empty = colouring off
+        self._text_color = QColor("#cccccc")
+        self._icon_size = 16
+
+        icon_loader().loaded.connect(self._on_icon_loaded)
 
         self._watcher = QFileSystemWatcher(self)
         self._watcher.directoryChanged.connect(self._on_dir_changed)
@@ -193,29 +312,60 @@ class DirectoryModel(QAbstractItemModel):
     def refresh(self):
         self._reload()
 
+    def is_loading(self) -> bool:
+        return self._scan_worker is not None
+
+    def set_view_options(
+        self,
+        show_hidden: bool,
+        show_extensions: bool,
+        type_colors: dict[str, str] | None,
+        text_color: str = "#cccccc",
+    ) -> None:
+        """Apply preference toggles; rescans only when the hidden filter changes."""
+        rescan = show_hidden != self._show_hidden
+        self._show_hidden = show_hidden
+        self._show_extensions = show_extensions
+        self._type_colors = {k: QColor(v) for k, v in (type_colors or {}).items()}
+        self._text_color = QColor(text_color)
+        if rescan:
+            self._reload()
+        else:
+            self._emit_all_changed()
+
+    def set_icon_size(self, size: int) -> None:
+        """Pixel size the view draws icons at; large sizes request bigger shell icons."""
+        if size != self._icon_size:
+            self._icon_size = size
+            for e in self._entries:
+                e._icon = None
+            self._emit_all_changed()
+
+    def sort_state(self) -> tuple[int, Qt.SortOrder]:
+        return self._sort_column, self._sort_order
+
     def file_path(self, index: QModelIndex) -> str:
-        if not index.isValid():
-            return ""
-        row = index.row()
-        if 0 <= row < len(self._entries):
-            return self._entries[row].path
-        return ""
+        e = self.entry(index)
+        return e.path if e else ""
 
     def is_dir(self, index: QModelIndex) -> bool:
-        if not index.isValid():
-            return False
-        row = index.row()
-        if 0 <= row < len(self._entries):
-            return self._entries[row].is_dir
-        return False
+        e = self.entry(index)
+        return e.is_dir if e else False
 
     def file_name(self, index: QModelIndex) -> str:
-        if not index.isValid():
-            return ""
-        row = index.row()
-        if 0 <= row < len(self._entries):
-            return self._entries[row].name
-        return ""
+        e = self.entry(index)
+        return e.name if e else ""
+
+    def entry(self, index: QModelIndex) -> FileEntry | None:
+        if index.isValid() and 0 <= index.row() < len(self._entries):
+            return self._entries[index.row()]
+        return None
+
+    def entries(self) -> list[FileEntry]:
+        return list(self._entries)
+
+    def row_of(self, path: str) -> int:
+        return self._row_of.get(path, -1)
 
     # --- QAbstractItemModel interface ---
 
@@ -245,19 +395,13 @@ class DirectoryModel(QAbstractItemModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col == 0:
-                if entry.name.lower().endswith(".lnk"):
-                    return entry.name[:-4]
-                return entry.name
+                return self.display_name(entry)
             elif col == 1:
                 if entry.is_dir:
                     return ""
                 return _format_size(entry.size)
             elif col == 2:
-                if entry.is_dir:
-                    return "\u8cc7\u6599\u593e"
-                if entry.name.lower().endswith(".lnk"):
-                    return "\u6377\u5f91"
-                return entry.ext.upper()[1:] if entry.ext else ""
+                return _type_label(entry)
             elif col == 3:
                 try:
                     return time.strftime("%Y/%m/%d %H:%M", time.localtime(entry.modified))
@@ -265,8 +409,20 @@ class DirectoryModel(QAbstractItemModel):
                     return ""
         elif role == Qt.ItemDataRole.DecorationRole and col == 0:
             return self._get_icon(entry)
+        elif role == Qt.ItemDataRole.ForegroundRole:
+            return self._foreground(entry)
+        elif role == Qt.ItemDataRole.ToolTipRole and col == 0:
+            return _link_tooltip(entry)
 
         return None
+
+    def display_name(self, entry: FileEntry) -> str:
+        name = _display_stem(entry.name)
+        if not self._show_extensions and not entry.is_dir:
+            stem, ext = os.path.splitext(name)
+            if stem and ext:
+                return stem
+        return name
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
@@ -277,9 +433,10 @@ class DirectoryModel(QAbstractItemModel):
     def sort(self, column, order=Qt.SortOrder.AscendingOrder):
         self._sort_column = column
         self._sort_order = order
-        self.beginResetModel()
-        self._apply_sort()
-        self.endResetModel()
+        self.layoutAboutToBeChanged.emit()
+        sort_entries(self._entries, column, order)
+        self._rebuild_row_index()
+        self.layoutChanged.emit()
 
     def flags(self, index):
         base = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -313,96 +470,125 @@ class DirectoryModel(QAbstractItemModel):
 
     # --- Internal ---
 
+    def _foreground(self, entry: FileEntry) -> QColor | None:
+        color = None
+        if entry.broken:
+            color = QColor(self._type_colors.get("broken", QColor("#f14c4c")))
+        elif self._type_colors and not entry.is_dir:
+            cat = category(entry.ext)
+            if cat:
+                color = QColor(self._type_colors[cat])
+        if entry.hidden:
+            # Hidden items are drawn semi-transparent (A04)
+            color = QColor(color or self._text_color)
+            color.setAlpha(120)
+        return color
+
     def _get_icon(self, entry: FileEntry) -> QIcon:
+        global _folder_icon
         if entry._icon is not None:
             return entry._icon
 
+        ext = entry.ext.lower()
+        # Large icon view shows real thumbnails for pictures and videos (A02).
+        thumb = (
+            not entry.is_dir
+            and self._icon_size >= THUMBNAIL_MIN_SIZE
+            and category(ext) in ("image", "video")
+        )
         if entry.is_dir:
-            icon = _icon_provider.icon(QFileIconProvider.IconType.Folder)
-        elif entry.name.lower().endswith(".lnk"):
-            # Try to get icon from shortcut target
-            cached = self._icon_cache.get(entry.path)
-            if cached is not None:
-                entry._icon = cached
-                return cached
-            icon = _resolve_lnk_icon(entry.path)
+            if _folder_icon is None:
+                _folder_icon = _icon_provider.icon(QFileIconProvider.IconType.Folder)
+            icon = _folder_icon
+        elif thumb or ext in _PER_FILE_ICON_EXTS:
+            key = _cache_key(entry.path, self._icon_size, not thumb)
+            icon = _file_icon_cache.get(key)
             if icon is None:
-                icon = _icon_provider.icon(QFileIconProvider.IconType.File)
-            self._icon_cache[entry.path] = icon
+                # Placeholder now; the real image arrives from the icon loader.
+                icon_loader().request(entry.path, self._icon_size, not thumb)
+                return self._ext_icon(entry, ext)
+            _file_icon_cache.move_to_end(key)
         else:
-            from PySide6.QtCore import QFileInfo
+            icon = self._ext_icon(entry, ext)
 
-            icon = _icon_provider.icon(QFileInfo(entry.path))
-
-        if entry.is_link:
+        # .lnk shortcuts get the same arrow badge as junctions (A15)
+        if entry.is_link or ext == ".lnk":
             icon = with_link_overlay(icon)
 
         entry._icon = icon
         return icon
 
+    @staticmethod
+    def _ext_icon(entry: FileEntry, ext: str) -> QIcon:
+        icon = _ext_icon_cache.get(ext)
+        if icon is None:
+            icon = _icon_provider.icon(QFileInfo(entry.path))
+            if ext and ext not in _PER_FILE_ICON_EXTS:  # those differ per file
+                _ext_icon_cache[ext] = icon
+        return icon
+
+    def _on_icon_loaded(self, path: str, size: int, icon_only: bool, img: QImage):
+        key = _cache_key(path, size, icon_only)
+        if key not in _file_icon_cache:  # every model gets the signal; store once
+            _file_icon_cache[key] = QIcon(QPixmap.fromImage(img))
+            if len(_file_icon_cache) > _FILE_ICON_CACHE_MAX:
+                _file_icon_cache.popitem(last=False)
+        row = self._row_of.get(path, -1)
+        if row >= 0 and size == self._icon_size:
+            self._entries[row]._icon = None
+            idx = self.index(row, 0)
+            self.dataChanged.emit(idx, idx, [Qt.ItemDataRole.DecorationRole])
+
+    def _emit_all_changed(self):
+        if self._entries:
+            self.dataChanged.emit(
+                self.index(0, 0), self.index(len(self._entries) - 1, len(self.COLUMNS) - 1)
+            )
+
+    def _rebuild_row_index(self):
+        self._row_of = {e.path: i for i, e in enumerate(self._entries)}
+
     def _on_dir_changed(self, path: str):
         self._refresh_timer.start()
 
     def _reload(self):
-        # Cancel previous scan if still running
-        if self._scan_worker is not None and self._scan_worker.isRunning():
+        # Ignore the previous scan (its result may still be queued even if it stopped)
+        if self._scan_worker is not None:
             self._scan_worker.done.disconnect()
+            self._scan_worker.progress.disconnect()
             self._scan_worker = None
 
         if not self._root_path or not os.path.isdir(self._root_path):
             self.beginResetModel()
-            self._entries.clear()
+            self._entries = []
+            self._row_of = {}
             self.endResetModel()
+            if self._root_path:
+                self.root_missing.emit(self._root_path)
             return
 
-        worker = _ScanWorker(self._root_path)
+        worker = _ScanWorker(
+            self._root_path, self._show_hidden, self._sort_column, self._sort_order
+        )
         worker.done.connect(self._on_scan_done)
+        worker.progress.connect(self.scan_progress.emit)
+        self._live_workers.append(worker)
+        # Bound slot on this main-thread object -> queued, runs after the thread ended.
+        worker.finished.connect(self._forget_finished_workers)
         self._scan_worker = worker
         worker.start()
 
+    def _forget_finished_workers(self):
+        self._live_workers = [w for w in self._live_workers if not w.isFinished()]
+
     def _on_scan_done(self, entries: list[FileEntry]):
+        worker = self._scan_worker
         self.beginResetModel()
         self._entries = entries
-        self._apply_sort()
+        # The user may have re-sorted while the scan was running.
+        if worker is not None and worker._sort != (self._sort_column, self._sort_order):
+            sort_entries(self._entries, self._sort_column, self._sort_order)
+        self._rebuild_row_index()
         self.endResetModel()
         self._scan_worker = None
-
-    def _apply_sort(self):
-        col = self._sort_column
-        reverse = self._sort_order == Qt.SortOrder.DescendingOrder
-
-        # Name: true name order, folders and files intermixed, numeric-aware.
-        # Sort on the displayed name (.lnk stripped) so order matches the column.
-        if col == 0:
-
-            def name_key(e: FileEntry):
-                name = e.name
-                if name.lower().endswith(".lnk"):
-                    name = name[:-4]
-                return _natural_key(name)
-
-            self._entries.sort(key=name_key, reverse=reverse)
-            return
-
-        # Date Modified: strict time order, no folder/file grouping.
-        if col == 3:
-            self._entries.sort(key=lambda e: e.modified, reverse=reverse)
-            return
-
-        # Size / Type: folders stay grouped at the top in BOTH directions.
-        # `reverse` must apply to the column value only, never to the
-        # folder-first grouping -- otherwise a descending sort flips the
-        # whole (dir_priority, value) tuple and sinks folders below files.
-        # Sort by the value first (honoring direction), then stable-sort by
-        # dir_priority ascending so folders stay on top regardless of order.
-        if col == 1:
-
-            def value_key(e: FileEntry):
-                return e.size
-        else:  # col == 2 (Type)
-
-            def value_key(e: FileEntry):
-                return e.ext.lower()
-
-        self._entries.sort(key=value_key, reverse=reverse)
-        self._entries.sort(key=lambda e: 0 if e.is_dir else 1)
+        self.scan_finished.emit()

@@ -224,3 +224,56 @@ def _remove_open_with_app(ext: str, app_name: str) -> bool:
         pass
 
     return removed
+
+
+_FOLDER_DESCRIPTIONS = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions"
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_ulong),
+        ("Data2", ctypes.c_ushort),
+        ("Data3", ctypes.c_ushort),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
+
+
+def _known_folder_path(guid_text: str) -> str:
+    guid = _GUID()
+    if ctypes.windll.ole32.CLSIDFromString(guid_text, ctypes.byref(guid)) != 0:
+        return ""
+    buf = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(buf)):
+        return ""
+    try:
+        return buf.value or ""
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(buf)
+
+
+def resolve_shell_folder(name: str) -> str:
+    """'startup' -> the folder Explorer opens for shell:startup ("" if unknown) (B11).
+
+    Explorer looks shell: names up in the registry FolderDescriptions table
+    (value "Name") and resolves the matching known-folder GUID; do the same.
+    """
+    want = name.strip().lower()
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _FOLDER_DESCRIPTIONS)
+    except OSError:
+        return ""
+    with root:
+        i = 0
+        while True:
+            try:
+                guid_text = winreg.EnumKey(root, i)
+            except OSError:
+                return ""
+            i += 1
+            try:
+                with winreg.OpenKey(root, guid_text) as key:
+                    folder_name = winreg.QueryValueEx(key, "Name")[0]
+            except OSError:
+                continue
+            if str(folder_name).lower() == want:
+                return _known_folder_path(guid_text)

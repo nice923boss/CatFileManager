@@ -1,8 +1,7 @@
-"""File operations — copy, move, delete in background threads."""
+"""Background workers: ZIP compression, hashing; recycle-bin delete."""
 
 import hashlib
 import os
-import shutil
 import zipfile
 
 from PySide6.QtCore import QThread, Signal
@@ -12,74 +11,6 @@ from send2trash import send2trash
 def _normalize(path: str) -> str:
     """Normalize path separators for Windows APIs."""
     return os.path.normpath(path)
-
-
-class FileOperationWorker(QThread):
-    """Runs file copy/move in a background thread."""
-
-    finished = Signal(str)  # success message
-    error = Signal(str)  # error message
-    progress = Signal(int, int, str)  # (current_index, total, current_filename)
-
-    def __init__(self, operation: str, sources: list[str], destination: str, parent=None):
-        super().__init__(parent)
-        self.operation = operation  # "copy" or "move"
-        self.sources = [_normalize(s) for s in sources]
-        self.destination = _normalize(destination)
-        self._cancelled = False
-
-    def cancel(self) -> None:
-        self._cancelled = True
-
-    def run(self):
-        errors: list[str] = []
-        success_count = 0
-        total = len(self.sources)
-        for idx, src in enumerate(self.sources):
-            if self._cancelled:
-                break
-            name = os.path.basename(src)
-            self.progress.emit(idx, total, name)
-            try:
-                dst = os.path.join(self.destination, name)
-
-                # Handle name collision
-                if os.path.exists(dst):
-                    base, ext = os.path.splitext(name)
-                    counter = 1
-                    while os.path.exists(dst):
-                        dst = os.path.join(self.destination, f"{base} ({counter}){ext}")
-                        counter += 1
-
-                if self.operation == "copy":
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst)
-                    else:
-                        shutil.copy2(src, dst)
-                elif self.operation == "move":
-                    shutil.move(src, dst)
-                    # Cross-drive moves (copytree+rmtree) may leave
-                    # empty source dirs on OneDrive / cloud-synced folders.
-                    if os.path.isdir(src) and not os.listdir(src):
-                        os.rmdir(src)
-
-                success_count += 1
-            except shutil.Error as e:
-                # shutil.Error contains a list of (src, dst, error) tuples
-                for item in e.args[0] if e.args else []:
-                    errors.append(f"{os.path.basename(item[0])}: {item[2]}")
-            except OSError as e:
-                errors.append(f"{os.path.basename(src)}: {e}")
-
-        op_name = "複製" if self.operation == "copy" else "移動"
-        if self._cancelled:
-            self.finished.emit(f"{op_name}已取消（已完成 {success_count} / {total} 個）")
-        elif errors:
-            self.error.emit(
-                f"{op_name}完成 {success_count} 個，失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
-            )
-        else:
-            self.finished.emit(f"{op_name}完成：{success_count} 個項目")
 
 
 class ZipCompressWorker(QThread):
