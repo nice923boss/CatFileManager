@@ -217,7 +217,7 @@ class FilePanelContextMenuMixin:
         if item_id == "rename":
             if single:
                 return [self._action("重新命名", lambda: self._rename(single))]
-            return [self._action("批次重新命名（含序號）", self._batch_rename)]
+            return [self._action("批次重新命名", self._batch_rename)]
         if item_id == "copy_path":
             return [self._action("複製路徑", lambda: self._copy_path(sel))]
         if item_id == "copy_as":

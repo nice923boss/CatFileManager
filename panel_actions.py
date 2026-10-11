@@ -417,7 +417,8 @@ class FilePanelActionsMixin:
                         zf.extractall(dest)
                 elif any(lower_arc.endswith(e) for e in _TAR_EXTS):
                     with tarfile.open(arc, "r:*") as tf:
-                        tf.extractall(dest)
+                        # "data" filter blocks ../ paths, absolute paths and device files
+                        tf.extractall(dest, filter="data")
                 else:
                     # 7z, rar, etc. — use 7z CLI directly
                     subprocess.run(
@@ -517,11 +518,15 @@ class FilePanelActionsMixin:
     def _push_batch_rename_undo(self, pairs: list[tuple[str, str]]) -> None:
         # Undo renames back one by one; that only works when no new name is
         # also an old name in the same batch (e.g. shifted sequence numbers).
-        olds = {os.path.normcase(s) for s, _ in pairs}
-        if any(os.path.normcase(d) in olds for _, d in pairs):
+        # Case-only renames ("a" -> "A") match their own old name; that's fine.
+        nc = os.path.normcase
+        olds = {nc(s) for s, _ in pairs}
+        if any(nc(d) in olds and nc(d) != nc(s) for s, d in pairs):
             return
         records = [
-            ("renamed", s, d) for s, d in pairs if os.path.lexists(d) and not os.path.lexists(s)
+            ("renamed", s, d)
+            for s, d in pairs
+            if os.path.lexists(d) and (nc(s) == nc(d) or not os.path.lexists(s))
         ]
         undo_stack.push(f"批次重新命名 {len(records)} 個項目", records)
 

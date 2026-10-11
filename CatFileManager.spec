@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('icon.ico', '.'), ('icon.png', '.')]
@@ -40,6 +42,8 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['icon.ico'],
+    # Written by build.py from version.py; absent when running PyInstaller by hand.
+    version=os.path.join(SPECPATH, 'version_info.txt') if os.path.exists(os.path.join(SPECPATH, 'version_info.txt')) else None,
 )
 coll = COLLECT(
     exe,

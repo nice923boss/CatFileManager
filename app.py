@@ -1,24 +1,43 @@
 """Quad File Manager — entry point (single instance)."""
 
+import logging
 import os
 import sys
 
 # Ensure the script directory is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Redirect stdout/stderr to a log file when running under pythonw (no console),
+# J05: every log goes to ~/.catfm/app.log (same file launcher.py uses).
+LOG_DIR = os.path.join(os.path.expanduser("~"), ".catfm")
+LOG_FILE = os.path.join(LOG_DIR, "app.log")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Redirect stdout/stderr when running under pythonw (no console),
 # so crashes and prints are captured instead of vanishing.
 if sys.stdout is None or sys.stderr is None:
-    _log_dir = os.path.expanduser("~")
-    _log_file = open(os.path.join(_log_dir, ".catfm_app.log"), "a", buffering=1, encoding="utf-8")
-    sys.stdout = _log_file
-    sys.stderr = _log_file
+    _log_file = open(LOG_FILE, "a", buffering=1, encoding="utf-8")
+    sys.stdout = sys.stdout or _log_file
+    sys.stderr = sys.stderr or _log_file
 
-from PySide6.QtCore import Qt
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication
 
-from file_manager import FileManagerWindow
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from file_manager import FileManagerWindow  # noqa: E402
+
+
+def _setup_logging() -> None:
+    handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+    def _excepthook(exc_type, exc, tb):
+        logging.getLogger("catfm").critical("Unhandled exception", exc_info=(exc_type, exc, tb))
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = _excepthook
+
 
 APP_KEY = "CatFileManager-SingleInstance"
 _LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".app.lock")
@@ -45,6 +64,7 @@ def _activate_existing():
 
 
 def main():
+    _setup_logging()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 

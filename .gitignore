@@ -1,4 +1,5 @@
 # Build output
+version_info.txt
 build/
 dist/
 dist_old/

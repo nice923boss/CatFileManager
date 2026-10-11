@@ -4,9 +4,10 @@ import ctypes
 import os
 import subprocess
 
-from PySide6.QtCore import QDir, Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QDir, QFileInfo, Qt, Signal
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
+    QFileIconProvider,
     QFileSystemModel,
     QInputDialog,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSplitter,
+    QStyle,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -23,11 +25,16 @@ from PySide6.QtWidgets import (
 from link_icon import LinkAwareIconProvider
 
 
+def _is_unc(path: str) -> bool:
+    return path.startswith(("\\\\", "//"))
+
+
 class FavoritesWidget(QWidget):
     """Customizable quick-access favorites list."""
 
     path_selected = Signal(str)
     favorites_changed = Signal(list)  # emits updated list for saving
+    status_message = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,6 +57,39 @@ class FavoritesWidget(QWidget):
         layout.addWidget(self.list_widget)
 
         self._favorites: list[dict] = []  # [{"name": "...", "path": "..."}]
+        self._icons = QFileIconProvider()
+
+    def _make_item(self, name: str, path: str) -> QListWidgetItem:
+        item = QListWidgetItem()
+        self._decorate(item, name, path)
+        return item
+
+    def _decorate(self, item: QListWidgetItem, name: str, path: str) -> None:
+        """I06: folder/drive icon, or a warning look when the path is gone.
+
+        UNC paths are not checked here: an offline server can block the UI
+        for many seconds. They are checked when clicked instead.
+        """
+        missing = not _is_unc(path) and not os.path.isdir(path)
+        item.setData(Qt.ItemDataRole.UserRole, path)
+        if missing:
+            warn = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+            item.setIcon(warn)
+            item.setText(f" {name}（找不到）")
+            item.setForeground(QColor("#888888"))
+            item.setToolTip(f"{path}\n找不到這個資料夾（磁碟未連接或已刪除）")
+        else:
+            item.setIcon(self._icons.icon(QFileInfo(path)))
+            item.setText(f" {name}")
+            item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            item.setToolTip(path)
+
+    def refresh_status(self) -> None:
+        """Re-check every favorite (e.g. after a drive was plugged in)."""
+        for i, fav in enumerate(self._favorites):
+            item = self.list_widget.item(i)
+            if item is not None:
+                self._decorate(item, fav["name"], fav["path"])
 
     def load_favorites(self, favorites: list):
         """Load favorites from settings."""
@@ -59,15 +99,11 @@ class FavoritesWidget(QWidget):
             if isinstance(fav, dict) and "path" in fav:
                 name = fav.get("name", os.path.basename(fav["path"]) or fav["path"])
                 self._favorites.append({"name": name, "path": fav["path"]})
-                item = QListWidgetItem(f"  \u2606 {name}")
-                item.setToolTip(fav["path"])
-                self.list_widget.addItem(item)
+                self.list_widget.addItem(self._make_item(name, fav["path"]))
             elif isinstance(fav, str):
                 name = os.path.basename(fav) or fav
                 self._favorites.append({"name": name, "path": fav})
-                item = QListWidgetItem(f"  \u2606 {name}")
-                item.setToolTip(fav)
-                self.list_widget.addItem(item)
+                self.list_widget.addItem(self._make_item(name, fav))
 
     def get_favorites(self) -> list[dict]:
         """Return current favorites list for saving."""
@@ -89,27 +125,29 @@ class FavoritesWidget(QWidget):
             name = os.path.basename(path) or path
         entry = {"name": name, "path": path}
         self._favorites.append(entry)
-        item = QListWidgetItem(f"  \u2606 {name}")
-        item.setToolTip(path)
-        self.list_widget.addItem(item)
+        self.list_widget.addItem(self._make_item(name, path))
         self.favorites_changed.emit(self.get_favorites())
 
     def _on_item_clicked(self, item: QListWidgetItem):
         idx = self.list_widget.row(item)
         if 0 <= idx < len(self._favorites):
-            path = self._favorites[idx]["path"]
+            fav = self._favorites[idx]
+            path = fav["path"]
             if os.path.isdir(path):
                 self.path_selected.emit(path)
+            else:
+                self.status_message.emit(f"找不到資料夾：{path}")
+            self._decorate(item, fav["name"], path)
 
     def _on_reorder(self):
         # Rebuild _favorites list to match new widget order
         new_favs = []
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
-            tooltip = item.toolTip()
+            path = item.data(Qt.ItemDataRole.UserRole)
             # Find matching favorite
             for fav in self._favorites:
-                if fav["path"] == tooltip:
+                if fav["path"] == path:
                     new_favs.append(fav)
                     break
         self._favorites = new_favs
@@ -146,7 +184,7 @@ class FavoritesWidget(QWidget):
             )
             if ok and new_name:
                 self._favorites[idx]["name"] = new_name
-                self.list_widget.item(idx).setText(f"  \u2606 {new_name}")
+                self._decorate(self.list_widget.item(idx), new_name, self._favorites[idx]["path"])
                 self.favorites_changed.emit(self.get_favorites())
 
     def _remove_favorite(self, idx: int):
@@ -246,6 +284,7 @@ class TreePanel(QWidget):
         self.favorites = FavoritesWidget()
         self.favorites.path_selected.connect(self.path_selected.emit)
         self.favorites.favorites_changed.connect(self.favorites_changed.emit)
+        self.favorites.status_message.connect(self.status_message.emit)
         self.splitter.addWidget(self.favorites)
 
         # Directory tree

@@ -89,7 +89,9 @@ def restore_from_recycle_bin(original: str, deleted_after: float) -> None:
 
 
 def _move_back(src: str, dst: str) -> None:
-    if os.path.lexists(lp(dst)):
+    # A case-only rename ("a.txt" -> "A.txt") finds itself at dst; that is fine.
+    case_only = os.path.normcase(src) == os.path.normcase(dst)
+    if os.path.lexists(lp(dst)) and not case_only:
         raise OSError(f"原位置已有同名項目：{os.path.basename(dst)}")
     if same_drive(src, dst):
         os.rename(lp(src), lp(dst))
