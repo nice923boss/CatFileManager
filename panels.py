@@ -19,6 +19,7 @@ from PySide6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, Qt,
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -225,6 +226,7 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
     # --- Actions (shortcut registry) ---
 
     def run_action(self, action_id: str) -> None:
+        self._cancel_pending_rename()
         here = self.current_path()
         handlers = {
             "copy": lambda: self._to_clipboard("copy"),
@@ -532,9 +534,19 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
             self._rename_timer.stop()
             self._rename_pending_path = path
 
+    def _cancel_pending_rename(self) -> None:
+        self._rename_timer.stop()
+        self._rename_pending_path = None
+
     def _on_rename_timer(self) -> None:
         path = self._rename_pending_path
         self._rename_pending_path = None
+        # Something else started after the click (delete confirmation, context
+        # menu, keyboard selection change): don't stack a rename dialog on it.
+        if QApplication.activeModalWidget() or QApplication.activePopupWidget():
+            return
+        if self._get_selected_paths() != [path]:
+            return
         if path and os.path.lexists(path):
             self._rename(path)
 

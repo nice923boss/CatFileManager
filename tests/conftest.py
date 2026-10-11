@@ -26,3 +26,11 @@ def make_junction(link, target) -> None:
 
 def set_hidden(path) -> None:
     subprocess.run(["attrib", "+h", str(path)], check=True, capture_output=True)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # The app stops the icon thread on aboutToQuit, which tests never emit; a
+    # QThread still running at interpreter exit aborts the process (0xC0000409).
+    loader = sys.modules.get("icon_loader")
+    if loader is not None and loader._instance is not None:
+        loader._instance.stop()

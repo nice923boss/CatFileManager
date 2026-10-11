@@ -48,6 +48,8 @@ class FavoritesWidget(QWidget):
 
         self.list_widget = QListWidget()
         self.list_widget.setObjectName("favorites")
+        # Elide long names ("…") instead of a horizontal scrollbar; tooltip has the full path
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemClicked.connect(self._on_item_clicked)

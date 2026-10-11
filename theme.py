@@ -17,6 +17,7 @@ PALETTES = {
         "text": "#cccccc",
         "text_dim": "#888888",
         "accent": "#007acc",
+        "link": "#3794ff",
         "select": "#264f78",
         "select_text": "#ffffff",
         "hover": "#2a2d2e",
@@ -44,6 +45,7 @@ PALETTES = {
         "text": "#1e1e1e",
         "text_dim": "#6e6e6e",
         "accent": "#007acc",
+        "link": "#005a9e",
         "select": "#cce4f7",
         "select_text": "#000000",
         "hover": "#e5f3ff",
@@ -192,6 +194,7 @@ QLabel#recycleLabel {{
 QListWidget#favorites {{ font-size: {fav_size}px; }}
 QListWidget#favorites::item {{ padding: 4px 2px; }}
 QWidget#breadcrumb {{ background-color: {input}; border: 1px solid {border}; }}
+QScrollArea#crumbScroll, QWidget#crumbContainer {{ background: transparent; border: none; }}
 QLabel#crumbSep {{ color: {text_dim}; padding: 0 2px; font-size: 13px; }}
 QPushButton#crumbBtn {{
     color: {text}; background: transparent; padding: 2px 4px; font-size: 12px; border: none;
@@ -245,6 +248,8 @@ def build_palette(theme: str) -> QPalette:
         QPalette.ColorRole.ToolTipBase: pal["header"],
         QPalette.ColorRole.ToolTipText: pal["text"],
         QPalette.ColorRole.PlaceholderText: pal["text_dim"],
+        QPalette.ColorRole.Link: pal["link"],
+        QPalette.ColorRole.LinkVisited: pal["link"],
     }
     for role, color in roles.items():
         qp.setColor(role, QColor(color))

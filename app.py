@@ -20,7 +20,7 @@ if sys.stdout is None or sys.stderr is None:
     sys.stderr = sys.stderr or _log_file
 
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QLibraryInfo, Qt, QTranslator  # noqa: E402
 from PySide6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -67,6 +67,13 @@ def main():
     _setup_logging()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    # Standard dialog buttons (OK/Cancel/Yes/No/Close) in Traditional Chinese
+    translator = QTranslator(app)
+    qt_dir = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if translator.load("qtbase_zh_TW", qt_dir):
+        app.installTranslator(translator)
+    else:
+        logging.warning("無法載入 Qt 繁中翻譯：%s", qt_dir)
 
     # Check if another instance is already running
     if _activate_existing():

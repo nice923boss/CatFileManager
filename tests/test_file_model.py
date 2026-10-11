@@ -120,8 +120,10 @@ def test_root_missing_signal(qapp, tmp_path):
 
 
 def test_shell_image_keeps_alpha(qapp):
-    from icon_loader import shell_image
+    from icon_loader import _ole32, shell_image
 
+    # The app only calls this on the loader thread, which initializes COM itself.
+    _ole32.CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
     img = shell_image(r"C:\Windows\explorer.exe", 48, True)
     assert img is not None and img.width() == 48
     assert img.hasAlphaChannel()

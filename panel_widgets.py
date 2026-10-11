@@ -7,11 +7,14 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCompleter,
     QFileSystemModel,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QListView,
     QPushButton,
+    QScrollArea,
     QToolTip,
     QTreeView,
     QWidget,
@@ -229,7 +232,25 @@ class BreadcrumbBar(QWidget):
         self._layout = QHBoxLayout(self._crumb_container)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
-        outer.addWidget(self._crumb_container, 1)
+        # Keep every crumb at full width; the QSS "QPushButton { min-width }" rule
+        # would otherwise let the layout squeeze names down to a few pixels.
+        self._layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        # Scroll area (no visible scrollbar) lets a long path shrink instead of
+        # widening the panel; it stays scrolled to the right so the current
+        # folder remains visible.
+        self._crumb_container.setObjectName("crumbContainer")
+        self._crumb_scroll = QScrollArea()
+        self._crumb_scroll.setObjectName("crumbScroll")
+        self._crumb_scroll.setWidget(self._crumb_container)
+        self._crumb_scroll.setWidgetResizable(True)
+        self._crumb_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._crumb_scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self._crumb_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._crumb_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._crumb_scroll.viewport().setAutoFillBackground(False)
+        hbar = self._crumb_scroll.horizontalScrollBar()
+        hbar.rangeChanged.connect(lambda _lo, hi: hbar.setValue(hi))
+        outer.addWidget(self._crumb_scroll, 1)
 
         # Right: always-visible path input (paste + Enter to jump)
         self._line_edit = _PathLineEdit()
