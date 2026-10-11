@@ -1,9 +1,19 @@
 """Application version and user-facing changelog (shown in the About dialog)."""
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 # Newest first: (version, [change lines in Traditional Chinese])
 CHANGELOG: list[tuple[str, list[str]]] = [
+    (
+        "1.1.1",
+        [
+            "對話框按鈕改為繁體中文（確定、取消、是、否、關閉）",
+            "長路徑麵包屑可捲動，不再撐寬面板或擠壓資料夾名稱",
+            "深色主題的連結改用亮藍色，較容易閱讀",
+            "按 Delete 時不會再疊出改名視窗",
+            "我的最愛不顯示水平捲軸，長名稱以「…」截斷",
+        ],
+    ),
     (
         "1.1.0",
         [
