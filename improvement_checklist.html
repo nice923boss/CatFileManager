@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CatFileManager 改進清單</title>
+<style>
+:root {
+  --bg: #f5f5f4; --surface: #ffffff; --surface-2: #efefed; --border: #d9d9d6;
+  --text: #1f1f1f; --muted: #6b6b68; --accent: #0a6cc2; --accent-soft: #e3effa;
+  --star: #b7791f; --s: #2f855a; --m: #b7791f; --l: #c0392b; --checked: #f1f7fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1e1e; --surface: #252526; --surface-2: #2d2d2d; --border: #3e3e3e;
+    --text: #e6e6e6; --muted: #9a9a9a; --accent: #3fa3f0; --accent-soft: #1c3448;
+    --star: #e8b84b; --s: #5fbf87; --m: #e8b84b; --l: #f07167; --checked: #1f2c38;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1e1e; --surface: #252526; --surface-2: #2d2d2d; --border: #3e3e3e;
+  --text: #e6e6e6; --muted: #9a9a9a; --accent: #3fa3f0; --accent-soft: #1c3448;
+  --star: #e8b84b; --s: #5fbf87; --m: #e8b84b; --l: #f07167; --checked: #1f2c38;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 120px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 20px; }
+.toolbar {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  padding: 10px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.toolbar input[type=search] {
+  flex: 1 1 200px; min-width: 0; padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+}
+.chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.legend { color: var(--muted); font-size: 13px; margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 14px; }
+section { margin-bottom: 26px; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.sec-head h2 { font-size: 18px; margin: 0; }
+.sec-count { color: var(--muted); font-size: 13px; }
+.sec-head button { margin-left: auto; }
+.item {
+  display: grid; grid-template-columns: 22px 1fr; gap: 4px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 6px;
+}
+.item.on { background: var(--checked); border-color: var(--accent); }
+.item input[type=checkbox] { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--accent); cursor: pointer; }
+.item label { cursor: pointer; }
+.title-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.id { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); }
+.t { font-weight: 600; }
+.desc { grid-column: 2; color: var(--muted); font-size: 14px; }
+.badge { font-size: 11px; border-radius: 4px; padding: 1px 6px; border: 1px solid currentColor; white-space: nowrap; }
+.e-S { color: var(--s); } .e-M { color: var(--m); } .e-L { color: var(--l); }
+.rec { color: var(--star); }
+.note {
+  grid-column: 2; display: none; margin-top: 4px; width: 100%; padding: 6px 8px;
+  border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font: inherit; font-size: 14px;
+}
+.item.on .note { display: block; }
+.hidden { display: none !important; }
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 10px 16px; display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap;
+}
+.bar .count { font-weight: 600; margin-right: 6px; }
+.btn {
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border-radius: 6px; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.toast { color: var(--s); font-size: 13px; min-width: 6em; }
+dialog {
+  width: min(720px, calc(100vw - 32px)); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); padding: 16px;
+}
+dialog textarea {
+  width: 100%; height: 50vh; font-family: Consolas, "Microsoft JhengHei", monospace; font-size: 13px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+}
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CatFileManager 改進清單（100 項）</h1>
+  <p class="lead">勾選想製作的項目，可在備註欄補充想法。完成後按下方「複製勾選結果」，貼回對話即可。勾選狀態會暫存在此瀏覽器。</p>
+
+  <div class="toolbar" role="toolbar" aria-label="篩選">
+    <input type="search" id="q" placeholder="搜尋項目…" aria-label="搜尋項目">
+    <button class="chip" id="f-rec" aria-pressed="false">★ 只看推薦</button>
+    <button class="chip" id="f-on" aria-pressed="false">只看已勾選</button>
+    <button class="chip" data-eff="S" aria-pressed="false">小</button>
+    <button class="chip" data-eff="M" aria-pressed="false">中</button>
+    <button class="chip" data-eff="L" aria-pressed="false">大</button>
+  </div>
+
+  <div class="legend">
+    <span><span class="badge e-S">小</span> 半天內</span>
+    <span><span class="badge e-M">中</span> 1 到 2 天</span>
+    <span><span class="badge e-L">大</span> 3 天以上或需架構調整</span>
+    <span><span class="badge rec">★ 推薦</span> 投入少、日常感受明顯</span>
+  </div>
+
+  <main id="list"></main>
+</div>
+
+<div class="bar">
+  <span class="count" id="count">已勾選 0 / 100</span>
+  <button class="btn" id="copy">複製勾選結果</button>
+  <button class="btn ghost" id="show">檢視文字</button>
+  <button class="btn ghost" id="dl">下載 .txt</button>
+  <button class="btn ghost" id="reset">清除全部</button>
+  <span class="toast" id="toast" aria-live="polite"></span>
+</div>
+
+<dialog id="dlg">
+  <textarea id="out" readonly aria-label="勾選結果"></textarea>
+  <div class="row">
+    <button class="btn" id="dlg-copy">複製</button>
+    <button class="btn ghost" id="dlg-close">關閉</button>
+  </div>
+</dialog>
+
+<script>
+const CATS = [
+  ["A", "檢視與顯示"], ["B", "導覽"], ["C", "檔案操作"], ["D", "搜尋與篩選"],
+  ["E", "預覽"], ["F", "右鍵選單與 Windows 整合"], ["G", "Junction 與連結"],
+  ["H", "快捷鍵與效率"], ["I", "設定與個人化"], ["J", "效能與穩定性"], ["K", "程式品質與維運"],
+];
+
+// [id, title, description, effort S/M/L, recommended]
+const ITEMS = [
+  ["A01", "欄位標題中文化", "目前欄位顯示 Name、Size、Type、Date Modified，改為名稱、大小、類型、修改日期。", "S", 1],
+  ["A02", "大圖示與縮圖檢視", "新增像檔案總管「大圖示」的檢視模式，圖片與影片直接顯示縮圖。", "L", 0],
+  ["A03", "Ctrl + 滾輪縮放圖示", "按住 Ctrl 滾動滑鼠滾輪調整列高與圖示大小。", "M", 0],
+  ["A04", "顯示隱藏檔開關", "目前隱藏檔與系統檔一律不顯示，加一個切換開關（隱藏檔以半透明顯示）。", "S", 1],
+  ["A05", "副檔名顯示開關", "可切換名稱欄是否顯示副檔名。", "S", 0],
+  ["A06", "自訂顯示欄位", "可加入建立日期、屬性、完整路徑等欄位，並可隱藏不需要的欄位。", "M", 0],
+  ["A07", "記住欄寬與排序", "目前重開後欄寬與排序方式會重置，改為每個面板各自記住。", "S", 1],
+  ["A08", "資料夾大小計算", "選取資料夾後在背景計算總大小，顯示在大小欄。", "M", 0],
+  ["A09", "相對日期顯示", "修改日期可顯示為「今天 14:30」「昨天」「3 天前」。", "S", 0],
+  ["A10", "類型欄顯示友善名稱", "類型欄顯示「PNG 影像」「Microsoft Word 文件」，而非只有副檔名。", "S", 0],
+  ["A11", "依檔案類型著色", "圖片、影片、壓縮檔、執行檔的檔名使用不同顏色，一眼分辨。", "S", 0],
+  ["A12", "淺色主題與跟隨系統", "新增淺色主題，並可自動跟隨 Windows 深淺色設定。", "M", 0],
+  ["A13", "面板版面切換", "可切換 1、2（左右或上下）、3、4 面板版面，不必永遠四格。", "M", 0],
+  ["A14", "分組顯示", "依類型或修改日期（今天、本週、更早）分組顯示。", "L", 0],
+  ["A15", ".lnk 捷徑加箭頭徽章", "目前只有 Junction 和 Symlink 有箭頭，.lnk 捷徑也比照檔案總管加上。", "S", 0],
+
+  ["B01", "面板分頁（Tabs）", "每個面板可開多個分頁，Ctrl+T 新分頁、Ctrl+W 關閉。", "L", 1],
+  ["B02", "麵包屑下拉選單", "點路徑列每一段旁的箭頭，列出同層子資料夾直接跳轉。", "M", 0],
+  ["B03", "路徑列自動完成", "在路徑列輸入時提示可用的子資料夾。", "M", 0],
+  ["B04", "最近造訪清單", "記錄最近開過的資料夾，可從選單快速跳回。", "S", 0],
+  ["B05", "面板同步瀏覽", "鎖定兩個面板，一邊切換子資料夾另一邊同步切換（比對兩份備份很好用）。", "M", 0],
+  ["B06", "右鍵「在面板 N 開啟」", "選取資料夾後，右鍵直接送到指定的其他面板開啟。", "S", 1],
+  ["B07", "滑鼠側鍵上一頁、下一頁", "支援滑鼠側邊的返回與前進按鍵，目前只有 Alt+方向鍵。", "S", 1],
+  ["B08", "目錄樹跟隨目前路徑", "切換面板路徑時，左側目錄樹自動展開並標示目前位置。", "M", 0],
+  ["B09", "目錄樹加入常用位置", "左側固定列出桌面、文件、下載、OneDrive。", "S", 0],
+  ["B10", "網路位置與 UNC 路徑", "支援 \\\\server\\share 網路路徑與已對應的網路磁碟。", "M", 0],
+  ["B11", "路徑支援環境變數", "路徑列可輸入 %APPDATA%、shell:startup 等特殊路徑。", "S", 0],
+  ["B12", "雙擊空白處回上一層", "在檔案清單空白處雙擊回到上一層資料夾。", "S", 0],
+
+  ["C01", "檔名衝突對話框", "目前同名一律自動加 (1)，改為詢問：覆蓋、略過、改名、套用到全部。", "M", 1],
+  ["C02", "復原 Ctrl+Z", "可復原最近的移動、改名、刪除操作。", "L", 1],
+  ["C03", "複製進度顯示速度與剩餘時間", "目前進度只算檔案數，改為顯示位元組、MB/s 與預估剩餘時間。", "M", 0],
+  ["C04", "檔案操作佇列", "多個複製工作排隊依序執行，避免同時搶同一顆磁碟。", "L", 0],
+  ["C05", "複製可暫停與續傳", "大檔複製可暫停，中斷後可從斷點繼續。", "L", 0],
+  ["C06", "拖曳行為依磁碟判斷", "同磁碟預設移動、跨磁碟預設複製，並在游標旁提示。", "S", 0],
+  ["C07", "新增檔案範本", "右鍵新增 Word、Excel、Markdown、Python 等空白檔案。", "S", 0],
+  ["C08", "Shift+Delete 永久刪除", "不經資源回收筒直接刪除（附確認對話框）。", "S", 0],
+  ["C09", "就地改名", "在清單內直接編輯檔名，不必跳出對話框。", "M", 0],
+  ["C10", "批次改名進階模式", "加入取代文字、正規表示式、大小寫轉換、日期前綴，並即時預覽。", "M", 1],
+  ["C11", "更多複製路徑格式", "複製檔名（不含路徑）、複製為 / 斜線路徑、複製為帶引號路徑。", "S", 0],
+  ["C12", "建立 Junction 與 Symlink", "右鍵「在此建立連結到…」，不必開 CMD 打 mklink。", "M", 0],
+  ["C13", "資料夾比對與同步", "比較兩個面板的資料夾差異，標示新增、刪除、修改，可一鍵同步。", "L", 0],
+  ["C14", "解壓縮與壓縮進階選項", "解壓到指定資料夾、支援 7z 壓縮、設定壓縮等級。", "M", 0],
+  ["C15", "複製後自動驗證", "複製完成後比對大小或雜湊值，確認檔案完整。", "M", 0],
+
+  ["D01", "遞迴搜尋子資料夾", "目前搜尋只過濾當前資料夾，改為可搜尋所有子資料夾，結果可直接操作。", "L", 1],
+  ["D02", "萬用字元與正規表示式", "搜尋框支援 *.png、IMG_???? 與正規表示式。", "S", 0],
+  ["D03", "依大小、日期、類型篩選", "例如只看大於 100 MB 或最近 7 天修改的檔案。", "M", 0],
+  ["D04", "整合 Everything 搜尋", "偵測到已安裝 Everything 時，用它秒搜全碟。", "M", 0],
+  ["D05", "搜尋檔案內容", "在文字檔、程式碼內搜尋關鍵字。", "M", 0],
+  ["D06", "顯示符合數量", "搜尋框旁即時顯示「符合 12 / 340 項」。", "S", 0],
+  ["D07", "搜尋歷史紀錄", "記住最近的搜尋字串，下拉即可重用。", "S", 0],
+  ["D08", "儲存搜尋條件", "常用搜尋條件存成「智慧資料夾」，一鍵開啟。", "M", 0],
+
+  ["E01", "內建預覽窗格", "不依賴 QuickLook，在側邊直接預覽圖片、文字、PDF 首頁。", "L", 1],
+  ["E02", "QuickLook 未安裝時提示", "目前沒裝 QuickLook 時按空白鍵毫無反應，改為顯示提示訊息。", "S", 1],
+  ["E03", "圖片懸停資訊", "滑鼠懸停圖片顯示解析度、大小與小縮圖。", "S", 0],
+  ["E04", "影片資訊", "顯示影片長度、解析度、編碼（需 ffprobe）。", "M", 0],
+  ["E05", "文字預覽自動偵測編碼", "Big5、UTF-8 檔案都能正確顯示，不出現亂碼。", "M", 0],
+  ["E06", "Markdown 渲染預覽", "預覽 .md 檔時顯示排版後的結果。", "M", 0],
+  ["E07", "壓縮檔內容預覽", "不解壓就能列出 zip、7z 內的檔案清單。", "M", 0],
+
+  ["F01", "原生 Windows 右鍵選單", "提供完整的系統右鍵選單（含 7-Zip、Git、防毒等第三方擴充）。", "L", 1],
+  ["F02", "在 PowerShell 或 Windows Terminal 開啟", "目前只有 CMD，加入 PowerShell 與 Windows Terminal。", "S", 0],
+  ["F03", "在 VS Code 開啟", "右鍵用 VS Code 開啟資料夾或檔案。", "S", 0],
+  ["F04", "右鍵選單可自訂", "選擇要顯示哪些項目、調整順序。", "M", 0],
+  ["F05", "用檔案總管開啟此位置", "一鍵在檔案總管開啟目前資料夾並選取檔案。", "S", 0],
+  ["F06", "外部拖入時的操作提示", "從檔案總管拖進來時，依 Shift、Ctrl 顯示移動或複製游標。", "S", 0],
+  ["F07", "設為預設資料夾開啟程式", "開啟資料夾時改用 CatFileManager（可一鍵還原）。", "M", 0],
+  ["F08", "系統匣常駐與全域快捷鍵", "最小化到系統匣，用全域快捷鍵隨時喚出。", "M", 0],
+
+  ["G01", "狀態列顯示連結目標", "選取 Junction 時，狀態列顯示實際指向的路徑。", "S", 0],
+  ["G02", "懸停顯示連結目標", "滑鼠移到 Junction 上顯示提示「→ F:\\AI Project」。", "S", 1],
+  ["G03", "類型欄標示連結種類", "類型欄顯示「Junction」「符號連結」，不只寫「資料夾」。", "S", 1],
+  ["G04", "修正資料夾 Symlink 被當成檔案", "目前指向資料夾的符號連結會顯示成檔案，無法雙擊進入。", "S", 1],
+  ["G05", "失效連結標示", "目標已不存在的連結用灰色或紅色標示。", "S", 0],
+  ["G06", "目錄樹右鍵開啟實際位置", "左側目錄樹也提供「開啟實際位置」。", "S", 0],
+
+  ["H01", "快捷鍵一覽表", "按 F1 顯示所有快捷鍵清單。", "S", 1],
+  ["H02", "自訂快捷鍵", "可重新設定各功能的快捷鍵。", "M", 0],
+  ["H03", "鍵盤切換面板", "Tab 切換作用中面板，Ctrl+1 到 Ctrl+4 直接跳到指定面板。", "S", 1],
+  ["H04", "F5 複製、F6 移動到另一面板", "Total Commander 慣例，選取後一鍵送到對面面板。", "S", 0],
+  ["H05", "新增資料夾與檔案快捷鍵", "Ctrl+Shift+N 新資料夾，Ctrl+N 新記事本。", "S", 0],
+  ["H06", "指令面板", "Ctrl+Shift+P 輸入關鍵字執行任何功能。", "M", 0],
+  ["H07", "選取同類型檔案", "依目前選取的副檔名，一鍵全選同類型檔案。", "S", 0],
+  ["H08", "我的最愛數字快捷鍵", "Alt+1 到 Alt+9 直接跳到第 N 個我的最愛。", "S", 0],
+
+  ["I01", "設定視窗", "目前沒有設定介面，要改 JSON 檔，新增圖形化設定視窗。", "M", 1],
+  ["I02", "字型與字體大小", "可調整清單字型與大小。", "S", 0],
+  ["I03", "啟動路徑選項", "選擇啟動時回到上次路徑或固定路徑。", "S", 0],
+  ["I04", "設定匯出與匯入", "換電腦時帶走我的最愛與版面設定。", "S", 0],
+  ["I05", "我的最愛分組", "我的最愛支援資料夾分組與摺疊。", "M", 0],
+  ["I06", "我的最愛圖示與失效偵測", "顯示資料夾圖示，路徑不存在時標示提醒。", "S", 0],
+  ["I07", "視窗置頂與透明度", "可設定視窗永遠在最上層、調整透明度。", "S", 0],
+
+  ["J01", "圖示改背景載入", "大型資料夾捲動時，圖示在背景載入，不卡畫面。", "M", 1],
+  ["J02", ".lnk 圖示快取共用", "捷徑圖示快取跨資料夾共用並限制大小，減少重複解析。", "S", 0],
+  ["J03", "超大資料夾分批載入", "十萬個檔案的資料夾也能流暢開啟。", "L", 0],
+  ["J04", "設定儲存失敗要提示", "目前存設定失敗會靜默忽略，改為提示使用者。", "S", 0],
+  ["J05", "統一 log 位置", "目前 log 分散在 ~/.catfm_app.log 與 ~/.catfm/app.log 兩處。", "S", 0],
+  ["J06", "磁碟拔除與斷線處理", "隨身碟拔除或網路斷線時，面板顯示提示並自動回到可用路徑。", "S", 0],
+  ["J07", "長路徑支援", "支援超過 260 字元的深層路徑。", "M", 0],
+
+  ["K01", "建立 git 版本控制", "專案目前不是 git repo，改動無法追溯與還原。", "S", 1],
+  ["K02", "清理遺留檔案", "清掉 _panels_original.bak、dist_old、_dist_locked、空的 _run.log。", "S", 0],
+  ["K03", "一鍵打包腳本", "自動關閉執行中程式、打包、標版本號。", "S", 1],
+  ["K04", "關於視窗與版本號", "顯示版本號與更新紀錄。", "S", 0],
+  ["K05", "補齊自動化測試", "檔案操作、改名、壓縮、解壓的測試。", "M", 0],
+  ["K06", "剪貼簿狀態改成類別管理", "目前用全域變數記錄剪下與複製，改為集中管理，減少跨面板錯亂。", "S", 0],
+  ["K07", "程式碼格式與 lint 檢查", "導入 ruff、black，統一程式碼風格。", "S", 0],
+];
+
+const EFF_LABEL = { S: "小", M: "中", L: "大" };
+const KEY = "catfm-checklist-v1";
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+let state = load(); // { id: { on: bool, note: str } }
+
+const list = document.getElementById("list");
+
+function esc(s) {
+  return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function render() {
+  list.innerHTML = CATS.map(([c, name]) => {
+    const rows = ITEMS.filter(it => it[0][0] === c).map(([id, t, d, e, rec]) => {
+      const st = state[id] || {};
+      return `<div class="item${st.on ? " on" : ""}" data-id="${id}" data-eff="${e}" data-rec="${rec}">
+        <input type="checkbox" id="cb-${id}" ${st.on ? "checked" : ""}>
+        <label for="cb-${id}" class="title-line">
+          <span class="id">${id}</span><span class="t">${esc(t)}</span>
+          <span class="badge e-${e}">${EFF_LABEL[e]}</span>${rec ? '<span class="badge rec">★ 推薦</span>' : ""}
+        </label>
+        <div class="desc">${esc(d)}</div>
+        <input class="note" type="text" placeholder="備註（選填）" value="${esc(st.note || "")}" aria-label="${id} 備註">
+      </div>`;
+    }).join("");
+    return `<section data-cat="${c}">
+      <div class="sec-head"><h2>${c}. ${name}</h2><span class="sec-count"></span>
+        <button class="chip" data-all="${c}">本類全選／取消</button></div>${rows}</section>`;
+  }).join("");
+}
+
+function update() {
+  let n = 0;
+  document.querySelectorAll("section").forEach(sec => {
+    const items = sec.querySelectorAll(".item");
+    const on = sec.querySelectorAll(".item.on").length;
+    n += on;
+    sec.querySelector(".sec-count").textContent = `${on} / ${items.length}`;
+  });
+  document.getElementById("count").textContent = `已勾選 ${n} / ${ITEMS.length}`;
+  applyFilter();
+}
+
+const filters = { q: "", rec: false, on: false, eff: new Set() };
+function applyFilter() {
+  const q = filters.q.trim().toLowerCase();
+  document.querySelectorAll(".item").forEach(el => {
+    const text = el.textContent.toLowerCase();
+    const show = (!q || text.includes(q))
+      && (!filters.rec || el.dataset.rec === "1")
+      && (!filters.on || el.classList.contains("on"))
+      && (!filters.eff.size || filters.eff.has(el.dataset.eff));
+    el.classList.toggle("hidden", !show);
+  });
+  document.querySelectorAll("section").forEach(sec => {
+    sec.classList.toggle("hidden", !sec.querySelector(".item:not(.hidden)"));
+  });
+}
+
+function setItem(el, on) {
+  const id = el.dataset.id;
+  el.classList.toggle("on", on);
+  el.querySelector("input[type=checkbox]").checked = on;
+  state[id] = { ...(state[id] || {}), on };
+}
+
+list.addEventListener("change", e => {
+  if (e.target.type === "checkbox") {
+    setItem(e.target.closest(".item"), e.target.checked);
+    save(); update();
+  }
+});
+list.addEventListener("input", e => {
+  if (e.target.classList.contains("note")) {
+    const id = e.target.closest(".item").dataset.id;
+    state[id] = { ...(state[id] || {}), note: e.target.value };
+    save();
+  }
+});
+list.addEventListener("click", e => {
+  const c = e.target.dataset && e.target.dataset.all;
+  if (!c) return;
+  const items = [...document.querySelectorAll(`section[data-cat="${c}"] .item:not(.hidden)`)];
+  const allOn = items.every(el => el.classList.contains("on"));
+  items.forEach(el => setItem(el, !allOn));
+  save(); update();
+});
+
+document.getElementById("q").addEventListener("input", e => { filters.q = e.target.value; applyFilter(); });
+document.getElementById("f-rec").addEventListener("click", e => {
+  filters.rec = !filters.rec; e.target.setAttribute("aria-pressed", filters.rec); applyFilter();
+});
+document.getElementById("f-on").addEventListener("click", e => {
+  filters.on = !filters.on; e.target.setAttribute("aria-pressed", filters.on); applyFilter();
+});
+document.querySelectorAll("[data-eff].chip").forEach(b => b.addEventListener("click", () => {
+  const k = b.dataset.eff;
+  filters.eff.has(k) ? filters.eff.delete(k) : filters.eff.add(k);
+  b.setAttribute("aria-pressed", filters.eff.has(k)); applyFilter();
+}));
+
+function resultText() {
+  const picked = ITEMS.filter(([id]) => state[id] && state[id].on);
+  const lines = [`CatFileManager 改進勾選結果（${picked.length} 項）`, ""];
+  CATS.forEach(([c, name]) => {
+    const group = picked.filter(it => it[0][0] === c);
+    if (!group.length) return;
+    lines.push(`【${c}. ${name}】`);
+    group.forEach(([id, t]) => {
+      const note = (state[id].note || "").trim();
+      lines.push(`[${id}] ${t}${note ? `｜備註：${note}` : ""}`);
+    });
+    lines.push("");
+  });
+  return lines.join("\n").trim();
+}
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  setTimeout(() => { t.textContent = ""; }, 2500);
+}
+
+async function copyText() {
+  const text = resultText();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("已複製");
+  } catch (e) {
+    openDialog();
+    toast("請在視窗中手動複製");
+  }
+}
+
+const dlg = document.getElementById("dlg");
+function openDialog() {
+  const out = document.getElementById("out");
+  out.value = resultText();
+  dlg.showModal();
+  out.select();
+}
+
+document.getElementById("copy").addEventListener("click", copyText);
+document.getElementById("show").addEventListener("click", openDialog);
+document.getElementById("dlg-copy").addEventListener("click", copyText);
+document.getElementById("dlg-close").addEventListener("click", () => dlg.close());
+document.getElementById("dl").addEventListener("click", () => {
+  const blob = new Blob([resultText()], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "CatFileManager_改進勾選結果.txt";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById("reset").addEventListener("click", () => {
+  if (!confirm("確定清除全部勾選與備註？")) return;
+  state = {}; save(); render(); update();
+});
+
+render();
+update();
+</script>
+</body>
+</html>

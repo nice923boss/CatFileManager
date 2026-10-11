@@ -1,0 +1,24 @@
+# Build output
+build/
+dist/
+dist_old/
+_dist_locked/
+
+# Python cache
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+# Local launcher copies (created by relink_launcher.bat)
+pythonw_catfm.exe
+python3.dll
+python312.dll
+pyvenv.cfg
+
+# Runtime / local files
+.app.lock
+*.log
+*.bak
+*.lnk
+_FOLDER_INFO.md

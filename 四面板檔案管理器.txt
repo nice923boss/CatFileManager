@@ -1,0 +1,5 @@
+專案名稱：四面板檔案管理器
+英文名稱：CatFileManager
+用途：四面板桌面檔案管理器，支援多面板同時瀏覽與操作
+技術：Python, PySide6 (Qt6)
+啟動方式：執行 start.bat
