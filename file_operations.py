@@ -18,7 +18,7 @@ class FileOperationWorker(QThread):
     """Runs file copy/move in a background thread."""
 
     finished = Signal(str)  # success message
-    error = Signal(str)     # error message
+    error = Signal(str)  # error message
     progress = Signal(int, int, str)  # (current_index, total, current_filename)
 
     def __init__(self, operation: str, sources: list[str], destination: str, parent=None):
@@ -73,13 +73,10 @@ class FileOperationWorker(QThread):
 
         op_name = "複製" if self.operation == "copy" else "移動"
         if self._cancelled:
-            self.finished.emit(
-                f"{op_name}已取消（已完成 {success_count} / {total} 個）"
-            )
+            self.finished.emit(f"{op_name}已取消（已完成 {success_count} / {total} 個）")
         elif errors:
             self.error.emit(
-                f"{op_name}完成 {success_count} 個，"
-                f"失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
+                f"{op_name}完成 {success_count} 個，失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
             )
         else:
             self.finished.emit(f"{op_name}完成：{success_count} 個項目")
@@ -89,7 +86,7 @@ class ZipCompressWorker(QThread):
     """Compress files/directories into a ZIP archive in a background thread."""
 
     finished = Signal(str)  # success message
-    error = Signal(str)     # error message
+    error = Signal(str)  # error message
     progress = Signal(int, int, str)  # (current_index, total, current_filename)
 
     def __init__(self, sources: list[str], zip_path: str, parent=None):
@@ -148,7 +145,10 @@ def delete_to_trash(paths: list[str]) -> tuple[bool, str]:
     try:
         normalized = [_normalize(p) for p in paths]
         send2trash(normalized)
-        return True, f"\u5df2\u522a\u9664 {len(paths)} \u500b\u9805\u76ee\u81f3\u8cc7\u6e90\u56de\u6536\u7b52"
+        return (
+            True,
+            f"\u5df2\u522a\u9664 {len(paths)} \u500b\u9805\u76ee\u81f3\u8cc7\u6e90\u56de\u6536\u7b52",
+        )
     except Exception as e:
         return False, str(e)
 

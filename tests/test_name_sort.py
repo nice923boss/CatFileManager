@@ -49,6 +49,7 @@ def _sorted_names(qapp, entries, column, order=None):
 
 # --- _natural_key (pure helper) -------------------------------------------
 
+
 def test_natural_key_splits_text_and_numbers():
     assert _natural_key("01image") == ["", 1, "image"]
     assert _natural_key("file") == ["file"]
@@ -60,6 +61,7 @@ def test_natural_key_orders_numbers_numerically():
 
 
 # --- Name column: folders and files intermix by number -------------------
+
 
 def test_name_sort_intermixes_folders_and_files_by_number(qapp):
     # The bug: a folder used to jump to the top regardless of its number.
@@ -105,6 +107,7 @@ def test_name_sort_descending_reverses_intermixed_order(qapp):
 
 
 # --- Other columns keep folder-first grouping (regression guard) ----------
+
 
 def test_size_sort_still_groups_folders_first(qapp):
     entries = [

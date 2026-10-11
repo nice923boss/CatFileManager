@@ -13,20 +13,26 @@ import subprocess
 import tarfile
 import zipfile
 
-from PySide6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QInputDialog, QLabel,
-    QMessageBox, QVBoxLayout,
-)
 from PySide6.QtCore import Qt, QThread
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QInputDialog,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+)
 
 from batch_rename import BatchRenameDialog, execute_batch_rename
 from file_dialogs import FileProgressDialog, HashDialog
 from file_operations import (
-    FileOperationWorker, ZipCompressWorker, delete_to_trash,
+    FileOperationWorker,
+    ZipCompressWorker,
+    delete_to_trash,
 )
 from panel_widgets import _RenameLineEdit
 from shell_utils import _resolve_lnk_target
-
 
 # ERROR_CANCELLED: the user dismissed a UAC / SmartScreen elevation prompt.
 # This is a benign cancellation, not a launch failure.
@@ -53,10 +59,7 @@ def _split_command(cmd: str) -> list[str]:
     pair of wrapping double quotes from every token so the path is usable.
     """
     parts = shlex.split(cmd, posix=False)
-    return [
-        p[1:-1] if len(p) >= 2 and p[0] == '"' and p[-1] == '"' else p
-        for p in parts
-    ]
+    return [p[1:-1] if len(p) >= 2 and p[0] == '"' and p[-1] == '"' else p for p in parts]
 
 
 class FilePanelActionsMixin:
@@ -79,10 +82,7 @@ class FilePanelActionsMixin:
             # it, and yields a clean (unquoted) executable path in argv[0].
             parts = _split_command(cmd_template)
             if any("%1" in p or "%L" in p for p in parts):
-                parts = [
-                    p.replace("%1", normalized).replace("%L", normalized)
-                    for p in parts
-                ]
+                parts = [p.replace("%1", normalized).replace("%L", normalized) for p in parts]
             else:
                 parts.append(normalized)
             subprocess.Popen(parts)
@@ -91,10 +91,13 @@ class FilePanelActionsMixin:
 
     def _open_with_dialog(self, file_path: str):
         try:
-            subprocess.Popen([
-                "rundll32.exe", "shell32.dll,OpenAs_RunDLL",
-                os.path.normpath(file_path),
-            ])
+            subprocess.Popen(
+                [
+                    "rundll32.exe",
+                    "shell32.dll,OpenAs_RunDLL",
+                    os.path.normpath(file_path),
+                ]
+            )
         except Exception as e:
             self.status_message.emit(_format_launch_error(e))
 
@@ -107,7 +110,9 @@ class FilePanelActionsMixin:
         from ctypes import wintypes
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(
-            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM,
+            wintypes.BOOL,
+            wintypes.HWND,
+            wintypes.LPARAM,
         )
         found: list[int] = []
 
@@ -140,7 +145,8 @@ class FilePanelActionsMixin:
         data = header + path_bytes
 
         h_global = ctypes.windll.kernel32.GlobalAlloc(
-            GMEM_MOVEABLE | GMEM_ZEROINIT, len(data),
+            GMEM_MOVEABLE | GMEM_ZEROINIT,
+            len(data),
         )
         ptr = ctypes.windll.kernel32.GlobalLock(h_global)
         ctypes.memmove(ptr, data, len(data))
@@ -152,14 +158,19 @@ class FilePanelActionsMixin:
     def _open_with_handbrake(self, file_path: str):
         try:
             import ctypes
+
             normalized = os.path.normpath(file_path)
             hwnd = self._find_handbrake_hwnd()
             if hwnd:
                 self._drop_file_to_hwnd(hwnd, normalized)
             else:
                 ctypes.windll.shell32.ShellExecuteW(
-                    None, "open", self._HANDBRAKE_EXE,
-                    f'"{normalized}"', None, 1,
+                    None,
+                    "open",
+                    self._HANDBRAKE_EXE,
+                    f'"{normalized}"',
+                    None,
+                    1,
                 )
         except Exception as e:
             self.status_message.emit(f"開啟 HandBrake 失敗：{e}")
@@ -167,6 +178,7 @@ class FilePanelActionsMixin:
     def _run_as_admin(self, file_path: str):
         try:
             import ctypes
+
             ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", os.path.normpath(file_path), None, None, 1
             )
@@ -307,9 +319,7 @@ class FilePanelActionsMixin:
         else:
             default_name = os.path.basename(parent_dir) + ".zip"
 
-        zip_name, ok = QInputDialog.getText(
-            self, "壓縮成 ZIP", "ZIP 檔名：", text=default_name
-        )
+        zip_name, ok = QInputDialog.getText(self, "壓縮成 ZIP", "ZIP 檔名：", text=default_name)
         if not ok or not zip_name.strip():
             return
         zip_name = zip_name.strip()
@@ -400,7 +410,8 @@ class FilePanelActionsMixin:
                     # 7z, rar, etc. — use 7z CLI directly
                     subprocess.run(
                         ["7z", "x", arc, f"-o{dest}", "-y"],
-                        check=True, capture_output=True,
+                        check=True,
+                        capture_output=True,
                     )
                 extracted += 1
             except zipfile.BadZipFile:
@@ -422,8 +433,7 @@ class FilePanelActionsMixin:
         self._refresh()
         if errors:
             self.status_message.emit(
-                f"解壓縮完成 {extracted} 個，"
-                f"失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
+                f"解壓縮完成 {extracted} 個，失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
             )
         else:
             self.status_message.emit(f"解壓縮完成：{extracted} 個壓縮檔")
@@ -471,9 +481,7 @@ class FilePanelActionsMixin:
 
     def _batch_rename(self):
         # Number files following the current visual (sorted) order
-        indexes = sorted(
-            self.tree.selectionModel().selectedRows(), key=lambda idx: idx.row()
-        )
+        indexes = sorted(self.tree.selectionModel().selectedRows(), key=lambda idx: idx.row())
         paths = [self.model.file_path(idx) for idx in indexes]
         paths = [p for p in paths if p and os.path.exists(p)]
         if len(paths) < 2:
@@ -485,16 +493,13 @@ class FilePanelActionsMixin:
         self._refresh()
         if errors:
             self.status_message.emit(
-                f"批次重新命名完成 {success} 個，"
-                f"失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
+                f"批次重新命名完成 {success} 個，失敗 {len(errors)} 個：{'; '.join(errors[:3])}"
             )
         else:
             self.status_message.emit(f"已批次重新命名 {success} 個項目")
 
     def _new_folder(self, parent_dir: str):
-        name, ok = QInputDialog.getText(
-            self, "新增資料夾", "資料夾名稱：", text="新資料夾"
-        )
+        name, ok = QInputDialog.getText(self, "新增資料夾", "資料夾名稱：", text="新資料夾")
         if ok and name:
             new_path = os.path.join(parent_dir, name)
             try:
@@ -505,9 +510,7 @@ class FilePanelActionsMixin:
                 self.status_message.emit(f"建立失敗：{e}")
 
     def _new_textfile(self, parent_dir: str):
-        name, ok = QInputDialog.getText(
-            self, "新增記事本", "檔案名稱：", text="新檔案.txt"
-        )
+        name, ok = QInputDialog.getText(self, "新增記事本", "檔案名稱：", text="新檔案.txt")
         if ok and name:
             if not os.path.splitext(name)[1]:
                 name += ".txt"
@@ -516,7 +519,7 @@ class FilePanelActionsMixin:
                 if os.path.exists(new_path):
                     self.status_message.emit(f"檔案已存在：{name}")
                     return
-                with open(new_path, "w", encoding="utf-8") as f:
+                with open(new_path, "w", encoding="utf-8"):
                     pass
                 self._refresh()
                 self.status_message.emit(f"已建立檔案：{name}")
@@ -528,6 +531,7 @@ class FilePanelActionsMixin:
         """Create a .lnk shortcut for the given file or folder."""
         try:
             import win32com.client
+
             parent_dir = os.path.dirname(target_path)
             base_name = os.path.splitext(os.path.basename(target_path))[0]
             lnk_path = os.path.join(parent_dir, f"{base_name} - 捷徑.lnk")

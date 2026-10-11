@@ -41,6 +41,7 @@ def _resolve_lnk_target(lnk_path: str) -> str:
     """Resolve a .lnk shortcut to its target path."""
     try:
         import win32com.client
+
         shell = win32com.client.Dispatch("WScript.Shell")
         sc = shell.CreateShortCut(lnk_path)
         return sc.TargetPath or lnk_path
@@ -82,7 +83,9 @@ def _get_open_with_apps(ext: str) -> list[tuple[str, str]]:
     except OSError:
         pass
     try:
-        key_path = f"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\{ext}\\OpenWithList"
+        key_path = (
+            f"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\{ext}\\OpenWithList"
+        )
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
             i = 0
             while True:
@@ -161,7 +164,9 @@ def _remove_open_with_app(ext: str, app_name: str) -> bool:
     progids_path = f"{base}\\OpenWithProgids"
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, progids_path, 0,
+            winreg.HKEY_CURRENT_USER,
+            progids_path,
+            0,
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             targets = []
@@ -187,7 +192,9 @@ def _remove_open_with_app(ext: str, app_name: str) -> bool:
     list_path = f"{base}\\OpenWithList"
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, list_path, 0,
+            winreg.HKEY_CURRENT_USER,
+            list_path,
+            0,
             winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE,
         ) as key:
             targets = []

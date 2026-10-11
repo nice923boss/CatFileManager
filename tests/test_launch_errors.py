@@ -24,7 +24,6 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-import panel_actions  # noqa: E402
 from panel_actions import (  # noqa: E402
     FilePanelActionsMixin,
     _format_launch_error,
@@ -58,6 +57,7 @@ def _os_error(winerror: int, msg: str = "boom") -> OSError:
 
 # --- _format_launch_error -------------------------------------------------
 
+
 def test_format_launch_error_treats_1223_as_cancel():
     assert _format_launch_error(_os_error(1223)) == "已取消"
 
@@ -74,6 +74,7 @@ def test_format_launch_error_handles_non_oserror():
 
 # --- _split_command (registry path assembly) ------------------------------
 
+
 def test_shlex_posix_false_retains_quotes_root_cause():
     # Document the defect: posix=False keeps the wrapping quotes, so argv[0]
     # would be an invalid path that still contains '"'.
@@ -89,6 +90,7 @@ def test_split_command_strips_wrapping_quotes():
 
 # --- _open_with builds a clean argv ---------------------------------------
 
+
 def test_open_with_quoted_template_builds_clean_argv(monkeypatch):
     captured: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen", lambda args, *a, **k: captured.append(args))
@@ -98,7 +100,7 @@ def test_open_with_quoted_template_builds_clean_argv(monkeypatch):
 
     assert captured, "Popen was not called"
     argv = captured[0]
-    assert argv[0] == r"C:\App\a.exe"            # no literal quotes
+    assert argv[0] == r"C:\App\a.exe"  # no literal quotes
     assert argv[1] == os.path.normpath(r"C:\Users\My File.txt")  # spaces intact, one arg
     assert host.status_message.messages == []
 
@@ -114,6 +116,7 @@ def test_open_with_template_without_placeholder_appends_file(monkeypatch):
 
 
 # --- launchers swallow failures instead of raising ------------------------
+
 
 @pytest.mark.parametrize("winerror,expected", [(267, "開啟失敗："), (1223, "已取消")])
 def test_open_with_dialog_reports_instead_of_raising(monkeypatch, winerror, expected):
@@ -154,6 +157,7 @@ def test_open_with_user_cancel_reports_cancelled(monkeypatch):
 
 
 # --- root-cause reproduction (real subprocess) ----------------------------
+
 
 @pytest.mark.skipif(os.name != "nt", reason="WinError 267 is Windows-specific")
 def test_winerror267_root_cause_is_file_as_cwd(tmp_path):

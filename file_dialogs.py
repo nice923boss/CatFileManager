@@ -1,11 +1,17 @@
 """Progress and hash dialogs used by the file panels."""
 
-from PySide6.QtWidgets import (
-    QApplication, QDialog, QHBoxLayout, QLabel, QPlainTextEdit,
-    QProgressBar, QPushButton, QVBoxLayout,
-)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from file_operations import HashCalculateWorker
 
@@ -19,9 +25,7 @@ class FileProgressDialog(QDialog):
         self.setWindowTitle(f"正在{op_name}檔案")
         self.setMinimumWidth(420)
         self.setModal(True)
-        self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
-        )
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
 
@@ -76,9 +80,7 @@ class HashDialog(QDialog):
         self.setWindowTitle("計算哈希值")
         self.setModal(False)
         self.resize(760, 480)
-        self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
-        )
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
 
@@ -136,9 +138,7 @@ class HashDialog(QDialog):
         self._progress.setValue(overall)
         self._label_status.setText(f"正在計算 [{idx + 1}/{total}]：{name}")
         if size > 0:
-            self._label_file.setText(
-                f"{_format_bytes(done)} / {_format_bytes(size)}"
-            )
+            self._label_file.setText(f"{_format_bytes(done)} / {_format_bytes(size)}")
         else:
             self._label_file.setText("(空檔案)")
 

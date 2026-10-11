@@ -2,14 +2,14 @@
 
 import os
 
-from PySide6.QtWidgets import QMainWindow, QSplitter, QStatusBar, QLabel
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QLabel, QMainWindow, QSplitter, QStatusBar
 
-from tree_panel import TreePanel
 from panels import FilePanel
 from settings import load_settings, save_settings
 from theme import DARK_THEME
+from tree_panel import TreePanel
 
 
 def _format_size(size_bytes: int) -> str:
@@ -115,8 +115,9 @@ class FileManagerWindow(QMainWindow):
 
         # Window geometry
         w = s.get("window", {})
-        self.setGeometry(w.get("x", 100), w.get("y", 100),
-                         w.get("width", 1400), w.get("height", 800))
+        self.setGeometry(
+            w.get("x", 100), w.get("y", 100), w.get("width", 1400), w.get("height", 800)
+        )
 
         # Panel paths
         panels_cfg = s.get("panels", {})
@@ -181,7 +182,9 @@ class FileManagerWindow(QMainWindow):
     def _add_to_favorites(self, path: str):
         """Add a folder to favorites from panel right-click."""
         self.tree_panel.favorites.add_favorite(path)
-        self._show_status(f"\u5df2\u52a0\u5165\u6211\u7684\u6700\u611b\uff1a{os.path.basename(path) or path}")
+        self._show_status(
+            f"\u5df2\u52a0\u5165\u6211\u7684\u6700\u611b\uff1a{os.path.basename(path) or path}"
+        )
 
     def _set_active_panel(self, panel_id: int):
         self.active_panel_id = panel_id

@@ -7,17 +7,24 @@ os.scandir() directly to avoid that issue.
 Large directories are scanned in a background thread to prevent UI freezing.
 """
 
+import ctypes
 import os
 import re
 import time
-import ctypes
 
 from PySide6.QtCore import (
-    Qt, QAbstractItemModel, QModelIndex, QTimer, QFileSystemWatcher,
-    QThread, Signal, QMimeData, QUrl,
+    QAbstractItemModel,
+    QFileSystemWatcher,
+    QMimeData,
+    QModelIndex,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
 )
-from PySide6.QtWidgets import QFileIconProvider
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QFileIconProvider
 
 from link_icon import with_link_overlay
 
@@ -36,10 +43,7 @@ def _natural_key(name: str) -> list:
     capturing group always alternates text/number, so even indices stay str
     and odd indices stay int and the lists compare without type clashes.
     """
-    return [
-        int(chunk) if i & 1 else chunk
-        for i, chunk in enumerate(_NUM_RE.split(name.lower()))
-    ]
+    return [int(chunk) if i & 1 else chunk for i, chunk in enumerate(_NUM_RE.split(name.lower()))]
 
 
 def _format_size(size: int) -> str:
@@ -67,17 +71,20 @@ def _resolve_lnk_icon(lnk_path: str) -> QIcon | None:
     """Get the icon of the .lnk target using Windows Shell COM."""
     try:
         import win32com.client
+
         shell = win32com.client.Dispatch("WScript.Shell")
         sc = shell.CreateShortCut(lnk_path)
         target = sc.TargetPath
         if target and os.path.exists(target):
             from PySide6.QtCore import QFileInfo
+
             return _icon_provider.icon(QFileInfo(target))
         icon_loc = sc.IconLocation
         if icon_loc and "," in icon_loc:
             ico_path = icon_loc.rsplit(",", 1)[0].strip()
             if ico_path and os.path.exists(ico_path):
                 from PySide6.QtCore import QFileInfo
+
                 return _icon_provider.icon(QFileInfo(ico_path))
     except Exception:
         pass
@@ -87,8 +94,16 @@ def _resolve_lnk_icon(lnk_path: str) -> QIcon | None:
 class FileEntry:
     __slots__ = ("name", "path", "is_dir", "size", "modified", "ext", "is_link", "_icon")
 
-    def __init__(self, name: str, path: str, is_dir: bool, size: int, modified: float, ext: str,
-                 is_link: bool = False):
+    def __init__(
+        self,
+        name: str,
+        path: str,
+        is_dir: bool,
+        size: int,
+        modified: float,
+        ext: str,
+        is_link: bool = False,
+    ):
         self.name = name
         self.path = path
         self.is_dir = is_dir
@@ -101,6 +116,7 @@ class FileEntry:
 
 class _ScanWorker(QThread):
     """Background thread for scanning directories."""
+
     done = Signal(list)  # list[FileEntry]
 
     def __init__(self, path: str, parent=None):
@@ -125,7 +141,9 @@ class _ScanWorker(QThread):
                         modified = stat.st_mtime
                         ext = os.path.splitext(name)[1]
                         is_link = entry.is_junction() or entry.is_symlink()
-                        entries.append(FileEntry(name, full_path, is_dir, size, modified, ext, is_link))
+                        entries.append(
+                            FileEntry(name, full_path, is_dir, size, modified, ext, is_link)
+                        )
                     except OSError:
                         continue
         except OSError:
@@ -313,6 +331,7 @@ class DirectoryModel(QAbstractItemModel):
             self._icon_cache[entry.path] = icon
         else:
             from PySide6.QtCore import QFileInfo
+
             icon = _icon_provider.icon(QFileInfo(entry.path))
 
         if entry.is_link:
@@ -355,6 +374,7 @@ class DirectoryModel(QAbstractItemModel):
         # Name: true name order, folders and files intermixed, numeric-aware.
         # Sort on the displayed name (.lnk stripped) so order matches the column.
         if col == 0:
+
             def name_key(e: FileEntry):
                 name = e.name
                 if name.lower().endswith(".lnk"):
@@ -376,9 +396,11 @@ class DirectoryModel(QAbstractItemModel):
         # Sort by the value first (honoring direction), then stable-sort by
         # dir_priority ascending so folders stay on top regardless of order.
         if col == 1:
+
             def value_key(e: FileEntry):
                 return e.size
         else:  # col == 2 (Type)
+
             def value_key(e: FileEntry):
                 return e.ext.lower()
 

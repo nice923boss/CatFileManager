@@ -2,11 +2,16 @@
 
 import os
 
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTreeView, QWidget,
+    QAbstractItemView,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTreeView,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
 
 
 class _PathLineEdit(QLineEdit):
@@ -16,8 +21,10 @@ class _PathLineEdit(QLineEdit):
         if e.type() == e.Type.ShortcutOverride:
             k = e.key()
             if k in (
-                Qt.Key.Key_Return, Qt.Key.Key_Enter,
-                Qt.Key.Key_Backspace, Qt.Key.Key_Space,
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Enter,
+                Qt.Key.Key_Backspace,
+                Qt.Key.Key_Space,
                 Qt.Key.Key_Delete,
             ):
                 e.accept()
@@ -114,7 +121,10 @@ class _RenameLineEdit(QLineEdit):
         if event.key() == Qt.Key.Key_Up and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
             self.setSelection(0, self.cursorPosition())
             return
-        if event.key() == Qt.Key.Key_Down and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+        if (
+            event.key() == Qt.Key.Key_Down
+            and event.modifiers() == Qt.KeyboardModifier.ShiftModifier
+        ):
             pos = self.cursorPosition()
             self.setSelection(pos, len(self.text()) - pos)
             return
@@ -125,6 +135,7 @@ class _RenameLineEdit(QLineEdit):
 
 
 # --- Breadcrumb Path Bar ---
+
 
 class BreadcrumbBar(QWidget):
     """Clickable breadcrumb path bar with inline path editing.
@@ -141,9 +152,7 @@ class BreadcrumbBar(QWidget):
         outer = QHBoxLayout(self)
         outer.setContentsMargins(4, 2, 4, 2)
         outer.setSpacing(4)
-        self.setStyleSheet(
-            "background-color: #3c3c3c; border: 1px solid #3e3e3e;"
-        )
+        self.setStyleSheet("background-color: #3c3c3c; border: 1px solid #3e3e3e;")
         self.setFixedHeight(28)
         self._path = ""
         self._edit_mode = False
@@ -253,6 +262,7 @@ class BreadcrumbBar(QWidget):
 
 
 # --- Search Bar ---
+
 
 class SearchBar(QWidget):
     """Inline search bar that filters the current file list."""

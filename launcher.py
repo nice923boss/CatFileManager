@@ -1,14 +1,17 @@
 """Wrapper: redirect stdout/stderr BEFORE any import."""
-import sys
+
 import os
-import traceback
 import runpy
+import sys
+import traceback
 
 _LOG_DIR = os.path.join(os.path.expanduser("~"), ".catfm")
 os.makedirs(_LOG_DIR, exist_ok=True)
 _log = open(
     os.path.join(_LOG_DIR, "app.log"),
-    "a", buffering=1, encoding="utf-8",
+    "a",
+    buffering=1,
+    encoding="utf-8",
 )
 
 if sys.stdout is None:

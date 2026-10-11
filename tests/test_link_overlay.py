@@ -31,7 +31,8 @@ def qapp():
 def _make_junction(link: str, target: str):
     subprocess.run(
         ["cmd", "/c", "mklink", "/J", link, target],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
 
 

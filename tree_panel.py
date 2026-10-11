@@ -1,16 +1,24 @@
 """Left-side shared directory tree panel with favorites."""
 
+import ctypes
 import os
 import subprocess
-import ctypes
 
-from PySide6.QtWidgets import (
-    QTreeView, QVBoxLayout, QWidget, QLabel, QFileSystemModel,
-    QListWidget, QListWidgetItem, QMenu, QSplitter, QInputDialog,
-    QMessageBox,
-)
-from PySide6.QtCore import Signal, QDir, Qt
+from PySide6.QtCore import QDir, Qt, Signal
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (
+    QFileSystemModel,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QSplitter,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
 from link_icon import LinkAwareIconProvider
 
@@ -35,7 +43,9 @@ class FavoritesWidget(QWidget):
         layout.addWidget(header)
 
         self.list_widget = QListWidget()
-        self.list_widget.setStyleSheet("QListWidget { font-size: 14px; } QListWidget::item { padding: 4px 2px; }")
+        self.list_widget.setStyleSheet(
+            "QListWidget { font-size: 14px; } QListWidget::item { padding: 4px 2px; }"
+        )
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
@@ -152,6 +162,7 @@ class FavoritesWidget(QWidget):
 
     def _add_favorite_dialog(self):
         from PySide6.QtWidgets import QFileDialog
+
         path = QFileDialog.getExistingDirectory(self, "\u9078\u64c7\u8cc7\u6599\u593e")
         if path:
             self.add_favorite(path)
@@ -170,8 +181,7 @@ class RecycleBinWidget(QWidget):
 
         self.label = QLabel("  \ud83d\uddd1 \u8cc7\u6e90\u56de\u6536\u7b52")
         self.label.setStyleSheet(
-            "background-color: #252526; color: #cccccc; "
-            "padding: 8px 4px; font-size: 13px;"
+            "background-color: #252526; color: #cccccc; padding: 8px 4px; font-size: 13px;"
         )
         self.label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -196,7 +206,7 @@ class RecycleBinWidget(QWidget):
         menu.exec(self.label.mapToGlobal(pos))
 
     def _open_recycle_bin(self):
-        subprocess.Popen('explorer.exe shell:RecycleBinFolder', shell=True)
+        subprocess.Popen("explorer.exe shell:RecycleBinFolder", shell=True)
 
     def _empty_recycle_bin(self):
         reply = QMessageBox.question(

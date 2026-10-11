@@ -14,21 +14,31 @@ import ctypes
 import os
 import subprocess
 
-from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QPushButton, QTreeView,
-    QVBoxLayout, QWidget,
-)
 from PySide6.QtCore import (
-    Qt, Signal, QModelIndex, QMimeData, QUrl, QTimer, QThread,
+    QMimeData,
+    QModelIndex,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
 )
 from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
 from file_model import DirectoryModel
-from panel_widgets import _FileTreeView, BreadcrumbBar, SearchBar
-from shell_utils import _SHELLEXECUTEINFO, _resolve_lnk_target
 from panel_actions import FilePanelActionsMixin
 from panel_context_menu import FilePanelContextMenuMixin
-
+from panel_widgets import BreadcrumbBar, SearchBar, _FileTreeView
+from shell_utils import _SHELLEXECUTEINFO, _resolve_lnk_target
 
 # --- Shared clipboard across all panels ---
 _shared_clipboard_paths: list[str] = []
@@ -123,14 +133,12 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
         self.tree.clicked.connect(lambda: self._on_click())
         # Clicks on empty space inside the tree don't emit `clicked`; make sure
         # they still activate this panel.
-        self.tree.pressed_anywhere.connect(
-            lambda: self.activated.emit(self.panel_id)
-        )
+        self.tree.pressed_anywhere.connect(lambda: self.activated.emit(self.panel_id))
         self.tree.selectionModel().selectionChanged.connect(
             lambda: self.selection_changed.emit(self.panel_id)
         )
 
-        self.other_panels: list["FilePanel"] = []
+        self.other_panels: list[FilePanel] = []
 
         # Slow-click rename: click an already-selected file to rename
         self._rename_pending_path: str | None = None
@@ -243,8 +251,7 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
         self.breadcrumb._line_edit.selectAll()
 
     _QUICKLOOK_PATH = os.path.join(
-        os.path.expanduser("~"),
-        r"AppData\Local\Programs\QuickLook\QuickLook.exe"
+        os.path.expanduser("~"), r"AppData\Local\Programs\QuickLook\QuickLook.exe"
     )
 
     def _shortcut_preview(self):
@@ -295,7 +302,7 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
 
         if not self._navigating_history:
             if self._history_index < len(self._history) - 1:
-                self._history = self._history[:self._history_index + 1]
+                self._history = self._history[: self._history_index + 1]
             if not self._history or self._history[-1] != path:
                 self._history.append(path)
                 self._history_index = len(self._history) - 1

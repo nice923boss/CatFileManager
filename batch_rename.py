@@ -4,8 +4,15 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
-    QDialogButtonBox, QPlainTextEdit, QMessageBox,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QSpinBox,
+    QVBoxLayout,
 )
 
 _INVALID_CHARS = set('<>:"/\\|?*')
@@ -15,7 +22,10 @@ _SEPARATOR_TAIL = ("_", "-", " ", ".")
 
 
 def build_rename_pairs(
-    paths: list[str], base: str, start: int, digits: int,
+    paths: list[str],
+    base: str,
+    start: int,
+    digits: int,
 ) -> list[tuple[str, str]]:
     """Return (source, target) pairs renaming *paths* to base_NN, keeping extensions."""
     sep = "" if base.endswith(_SEPARATOR_TAIL) else "_"
@@ -75,9 +85,7 @@ class BatchRenameDialog(QDialog):
         self._paths = paths
         self.setWindowTitle(f"批次重新命名（{len(paths)} 個項目）")
         self.setMinimumWidth(460)
-        self.setWindowFlags(
-            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
-        )
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.setStyleSheet(
             "QSpinBox { background-color: #3c3c3c; color: #cccccc;"
             "  border: 1px solid #3e3e3e; padding: 2px 6px; }"
@@ -167,16 +175,15 @@ class BatchRenameDialog(QDialog):
         pairs = self.rename_pairs()
         sources = {os.path.normcase(os.path.normpath(s)) for s, _ in pairs}
         conflicts = [
-            os.path.basename(dst) for _, dst in pairs
-            if os.path.exists(dst)
-            and os.path.normcase(os.path.normpath(dst)) not in sources
+            os.path.basename(dst)
+            for _, dst in pairs
+            if os.path.exists(dst) and os.path.normcase(os.path.normpath(dst)) not in sources
         ]
         if conflicts:
             QMessageBox.warning(
                 self,
                 "批次重新命名",
-                "以下名稱與現有檔案衝突，請改用其他名稱或序號：\n"
-                + "\n".join(conflicts[:8]),
+                "以下名稱與現有檔案衝突，請改用其他名稱或序號：\n" + "\n".join(conflicts[:8]),
             )
             return
         super().accept()

@@ -3,13 +3,15 @@
 import os
 import subprocess
 
-from PySide6.QtWidgets import QMenu
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMenu
 
 from link_icon import link_target
 from shell_utils import (
-    _get_open_with_apps, _get_send_to_items, _remove_open_with_app,
+    _get_open_with_apps,
+    _get_send_to_items,
+    _remove_open_with_app,
     _show_file_properties,
 )
 
@@ -90,9 +92,7 @@ class FilePanelContextMenuMixin:
             target = link_target(selected[0]) if len(selected) == 1 else None
             if target and os.path.isdir(target):
                 act_real = QAction(f"開啟實際位置（{target}）", self)
-                act_real.triggered.connect(
-                    lambda checked=False, p=target: self.navigate_to(p)
-                )
+                act_real.triggered.connect(lambda checked=False, p=target: self.navigate_to(p))
                 menu.addAction(act_real)
                 menu.addSeparator()
 
@@ -101,9 +101,7 @@ class FilePanelContextMenuMixin:
                 apps = _get_open_with_apps(ext)
 
                 # Right-click a registry-sourced app entry to remove it.
-                open_with_menu = _OpenWithMenu(
-                    "開啟方式", self, self._open_with_remove, ext
-                )
+                open_with_menu = _OpenWithMenu("開啟方式", self, self._open_with_remove, ext)
 
                 act_default = QAction("預設程式", self)
                 file_path = selected[0]
@@ -158,11 +156,22 @@ class FilePanelContextMenuMixin:
 
             # HandBrake for video files
             _VIDEO_EXTS = {
-                ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv",
-                ".webm", ".m4v", ".mpg", ".mpeg", ".ts", ".vob",
+                ".mp4",
+                ".mkv",
+                ".avi",
+                ".mov",
+                ".wmv",
+                ".flv",
+                ".webm",
+                ".m4v",
+                ".mpg",
+                ".mpeg",
+                ".ts",
+                ".vob",
             }
             video_files = [
-                p for p in selected
+                p
+                for p in selected
                 if os.path.isfile(p) and os.path.splitext(p)[1].lower() in _VIDEO_EXTS
             ]
             if video_files:
@@ -187,7 +196,9 @@ class FilePanelContextMenuMixin:
             copy_menu = QMenu("複製到", self)
             for panel in self.other_panels:
                 target_path = panel.current_path()
-                label = f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
+                label = (
+                    f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
+                )
                 act_copy = QAction(label, self)
                 act_copy.triggered.connect(
                     lambda checked=False, s=list(selected), d=target_path: self._copy_to(s, d)
@@ -198,7 +209,9 @@ class FilePanelContextMenuMixin:
             move_menu = QMenu("移動到", self)
             for panel in self.other_panels:
                 target_path = panel.current_path()
-                label = f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
+                label = (
+                    f"面板 {panel.panel_id + 1}  ({os.path.basename(target_path) or target_path})"
+                )
                 act_move = QAction(label, self)
                 act_move.triggered.connect(
                     lambda checked=False, s=list(selected), d=target_path: self._move_to(s, d)
@@ -220,8 +233,10 @@ class FilePanelContextMenuMixin:
             _ARCHIVE_SIMPLE_EXTS = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
             _ARCHIVE_COMPOUND_EXTS = (".tar.gz", ".tar.bz2", ".tar.xz")
             archives = [
-                p for p in selected
-                if os.path.isfile(p) and (
+                p
+                for p in selected
+                if os.path.isfile(p)
+                and (
                     os.path.splitext(p)[1].lower() in _ARCHIVE_SIMPLE_EXTS
                     or p.lower().endswith(_ARCHIVE_COMPOUND_EXTS)
                 )
