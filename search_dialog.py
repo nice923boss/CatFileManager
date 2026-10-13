@@ -1,5 +1,6 @@
 """Results window for subfolder / content / Everything searches (D01, D04, D05)."""
 
+import logging
 import os
 import time
 
@@ -17,8 +18,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from search_engine import Hit, SearchWorker
+from search_engine import Hit, SearchWorker, run_install_script
 from transfer_ui import format_bytes
+
+log = logging.getLogger(__name__)
 
 _MODE_TITLES = {
     "recursive": "搜尋子資料夾",
@@ -90,14 +93,35 @@ class SearchResultsDialog(QDialog):
         self.status = QLabel("搜尋中…")
         self.status.setObjectName("dimText")
         bottom.addWidget(self.status, 1)
+        # Shown when an Everything search fails because es.exe / Everything is missing.
+        self.install_btn = QPushButton("一鍵安裝 Everything")
+        self.install_btn.clicked.connect(self._install_everything)
+        self.install_btn.hide()
+        bottom.addWidget(self.install_btn)
+        self.retry_btn = QPushButton("重新搜尋")
+        self.retry_btn.clicked.connect(self._start_search)
+        self.retry_btn.hide()
+        bottom.addWidget(self.retry_btn)
         self.stop_btn = QPushButton("停止")
         self.stop_btn.clicked.connect(self._stop)
         bottom.addWidget(self.stop_btn)
         layout.addLayout(bottom)
 
+        self._search_args = (mode, root, text, regex, es_path)
+        self._worker = None
+        self._start_search()
+
+    def _start_search(self) -> None:
+        if self._worker is not None:
+            self._worker.wait()  # already done; let the thread finish before dropping it
+        self.tree.clear()
+        self.install_btn.hide()
+        self.retry_btn.hide()
+        self.stop_btn.setEnabled(True)
+        self.status.setText("搜尋中…")
         self._count = 0
         self._user_stopped = False
-        self._worker = SearchWorker(mode, root, text, regex, es_path)
+        self._worker = SearchWorker(*self._search_args)
         self._worker.found.connect(self._add_hits)
         self._worker.scanning.connect(lambda folder: self.status.setText(f"搜尋中… {folder}"))
         self._worker.done.connect(self._on_done)
@@ -127,7 +151,11 @@ class SearchResultsDialog(QDialog):
         self.stop_btn.setEnabled(False)
         if error:
             self.status.setText(error)
+            self.status.setWordWrap(True)  # long messages must not squeeze the buttons
             self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            if self._worker.needs_install:
+                self.install_btn.show()
+                self.retry_btn.show()
             return
         if self._user_stopped:
             text = f"已停止，共 {self._count} 項"
@@ -140,6 +168,15 @@ class SearchResultsDialog(QDialog):
     def _stop(self) -> None:
         self._user_stopped = True
         self._worker.cancel()
+
+    def _install_everything(self) -> None:
+        try:
+            run_install_script()
+        except OSError as e:
+            log.exception("Could not start install_everything.ps1")
+            self.status.setText(f"無法啟動安裝腳本：{e}")
+            return
+        self.status.setText("已開啟安裝視窗，裝好後按「重新搜尋」")
 
     # --- actions ---
 

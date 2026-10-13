@@ -3,7 +3,7 @@ import os
 
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('icon.ico', '.'), ('icon.png', '.')]
+datas = [('icon.ico', '.'), ('icon.png', '.'), ('install_everything.ps1', '.')]
 binaries = []
 hiddenimports = ['win32com.client', 'win32com.shell']
 tmp_ret = collect_all('shiboken6')

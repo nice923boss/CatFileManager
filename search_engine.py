@@ -1,5 +1,6 @@
 """Background searches: subfolders by name (D01/D02), file contents (D05), Everything (D04)."""
 
+import glob
 import logging
 import os
 import shutil
@@ -20,6 +21,8 @@ CONTENT_SIZE_LIMIT = 50 * 1024 * 1024  # skip bigger files in content search
 _CHUNK = 1024 * 1024
 
 EVERYTHING_URL = "https://www.voidtools.com/zh-tw/downloads/"
+INSTALL_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "install_everything.ps1")
+ES_IPC_NOT_FOUND = 8  # es.exe exit code: no running Everything answered
 
 
 class Hit(NamedTuple):
@@ -32,14 +35,30 @@ class Hit(NamedTuple):
 def find_es_exe(override: str = "") -> str:
     """Path of Everything's command-line client es.exe, or "" when not found."""
     local = os.environ.get("LOCALAPPDATA", "")
+    winget = os.path.join(local, r"Microsoft\WinGet") if local else ""
     candidates = [
         override,
         shutil.which("es.exe") or "",
         r"C:\Program Files\Everything\es.exe",
         r"C:\Program Files (x86)\Everything\es.exe",
         os.path.join(local, r"Programs\Everything\es.exe") if local else "",
+        # winget installs (install_everything.ps1); this process predates the PATH change
+        os.path.join(winget, r"Links\es.exe") if winget else "",
+        *(
+            glob.glob(os.path.join(winget, r"Packages\voidtools.Everything.Cli_*\es.exe"))
+            if winget
+            else []
+        ),
     ]
     return next((c for c in candidates if c and os.path.isfile(c)), "")
+
+
+def run_install_script() -> None:
+    """Open install_everything.ps1 in its own console so winget progress and UAC show."""
+    subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", INSTALL_SCRIPT],
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
 
 
 def _needles(text: str) -> list[bytes]:
@@ -99,6 +118,7 @@ class SearchWorker(QThread):
         self._text = text
         self._regex = regex
         self._es_path = es_path
+        self.needs_install = False  # Everything search failed for want of es.exe / Everything
         self._cancelled = False
         self._count = 0
         self._batch: list[Hit] = []
@@ -174,18 +194,26 @@ class SearchWorker(QThread):
     def _run_everything(self) -> str:
         es = find_es_exe(self._es_path)
         if not es:
-            return f"找不到 Everything 的 es.exe，請安裝 Everything 與 ES 命令列工具（{EVERYTHING_URL}）"
+            self.needs_install = True
+            return f"找不到 Everything 的命令列工具 es.exe，請按「一鍵安裝」，或到 {EVERYTHING_URL} 下載"
         fd, out_file = tempfile.mkstemp(suffix=".txt", prefix="catfm-es-")
         os.close(fd)
         try:
-            args = [es, "-n", str(self.LIMIT), "-export-txt", out_file, "-utf8-bom"]
+            args = ["-n", str(self.LIMIT), "-export-txt", out_file, "-utf8-bom"]
             args += ["-r", self._text] if self._regex else [self._text]
-            proc = subprocess.run(
-                args,
-                capture_output=True,
-                timeout=60,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            # Everything 1.4 / 1.5 beta answer as the default instance, 1.5 alpha as "1.5a".
+            for instance in ([], ["-instance", "1.5a"]):
+                proc = subprocess.run(
+                    [es, *instance, *args],
+                    capture_output=True,
+                    timeout=60,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                if proc.returncode != ES_IPC_NOT_FOUND:
+                    break
+            if proc.returncode == ES_IPC_NOT_FOUND:
+                self.needs_install = True
+                return "Everything 沒有在執行，請開啟 Everything，或按「一鍵安裝」"
             if proc.returncode != 0:
                 return (
                     f"Everything 搜尋失敗（錯誤碼 {proc.returncode}），請確認 Everything 正在執行"

@@ -48,6 +48,8 @@ python app.py
 | Everything 與 ES 命令列工具 | 全碟秒搜（搜尋視窗選「Everything」模式） | https://www.voidtools.com/ |
 | QuickLook | 空白鍵預覽檔案 | https://github.com/QL-Win/QuickLook |
 
+沒裝 Everything 時，Everything 搜尋結果視窗會出現「一鍵安裝 Everything」按鈕，執行 `install_everything.ps1`：用 winget 安裝 ES 命令列工具與 Everything（安裝 Everything 會跳出系統管理員確認），已安裝但沒執行的 Everything 會直接啟動。裝好後按「重新搜尋」。支援 Everything 1.4、1.5 Beta 與 1.5 Alpha（自動改用 `-instance 1.5a`）。
+
 es.exe 不在預設位置時，可在「設定 → 操作與搜尋」指定路徑。
 
 ## 設定與記錄檔位置
