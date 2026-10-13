@@ -25,6 +25,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from file_manager import FileManagerWindow  # noqa: E402
+from shell_utils import reset_inherited_dll_directory  # noqa: E402
 
 
 def _setup_logging() -> None:
@@ -66,6 +67,7 @@ def _activate_existing():
 def main():
     _setup_logging()
     app = QApplication(sys.argv)
+    reset_inherited_dll_directory()  # after Qt's platform plugin has loaded
     app.setStyle("Fusion")
     # Standard dialog buttons (OK/Cancel/Yes/No/Close) in Traditional Chinese
     translator = QTranslator(app)

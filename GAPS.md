@@ -16,3 +16,4 @@
 | 指令面板的快捷鍵沒有對齊成一欄 | 名稱與按鍵以全形空白分隔，未用兩欄元件 | 純外觀，不影響操作 | 未排定 | 黃政文 |
 | exe 未數位簽章 | 沒有程式碼簽章憑證 | 首次執行時 Windows SmartScreen 可能跳出警告，需按「其他資訊」再「仍要執行」 | 未排定 | 黃政文 |
 | 7z、rar 解壓縮需另裝 7-Zip | 標準函式庫只支援 zip 與 tar | 未安裝 7-Zip 時會顯示「需安裝 7-Zip」 | 系統限制，不補 | 不適用 |
+| 打包版開啟的程式仍繼承指向 _internal 的環境變數 | 啟動時已清掉 PyInstaller 設的 DLL 搜尋目錄（SetDllDirectory），但 PyInstaller 的 runtime hook 另外把 _internal、_internal\PySide6、_internal\pywin32_system32 加到 PATH 最前面，並設定 QT_PLUGIN_PATH、QML2_IMPORT_PATH，從 App 開啟的程式都會繼承 | PATH 排在 System32 之後，所以 System32 已有的 DLL 不受影響（2026-10-13 實測 shell open、CMD、PowerShell、Windows Terminal、一鍵安裝的子程序都沒載入 _internal 的模組）；但 System32 沒有的 DLL（Qt6*.dll、libcrypto-3.dll，或沒裝 VC++ 可轉散發套件的電腦上的 VCRUNTIME140.dll）仍可能被子程序從 _internal 載入並鎖住 dist；從 App 開啟的其他 Qt 程式可能掃到本 App 的 Qt plugin | 未排定 | 黃政文 |

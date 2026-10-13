@@ -3,7 +3,21 @@
 import ctypes
 import ctypes.wintypes
 import os
+import sys
 import winreg
+
+
+def reset_inherited_dll_directory() -> None:
+    """Keep the packaged app's _internal folder out of child processes' DLL search.
+
+    PyInstaller's bootloader calls SetDllDirectoryW(<_internal>), and every process
+    started from the app (shell open, terminals, installers) inherits it, so those
+    programs load our bundled VCRUNTIME140.dll ahead of System32 and lock dist/.
+    The app itself no longer needs it once Qt is up: CPython loads .pyd files with
+    their own folder on the search path, and Qt plugins find the Qt DLLs via PATH.
+    """
+    if getattr(sys, "frozen", False):
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
 
 
 class _SHELLEXECUTEINFO(ctypes.Structure):
