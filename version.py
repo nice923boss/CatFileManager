@@ -1,9 +1,17 @@
 """Application version and user-facing changelog (shown in the About dialog)."""
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 # Newest first: (version, [change lines in Traditional Chinese])
 CHANGELOG: list[tuple[str, list[str]]] = [
+    (
+        "1.1.2",
+        [
+            "Everything 搜尋支援 Everything 1.5a",
+            "搜尋視窗缺 es.exe 或 Everything 未執行時，提供「一鍵安裝 Everything」與「重新搜尋」",
+            "從本程式開啟的其他程式不再鎖住本程式的檔案，更新或重新打包時不會被擋住",
+        ],
+    ),
     (
         "1.1.1",
         [
