@@ -69,7 +69,6 @@ class SettingsDialog(QDialog):
     def __init__(self, prefs: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("設定")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.resize(620, 560)
         self._prefs = copy.deepcopy(prefs)
 

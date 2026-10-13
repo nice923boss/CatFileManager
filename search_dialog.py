@@ -65,7 +65,6 @@ class SearchResultsDialog(QDialog):
         super().__init__(panel.window())
         self._panel = panel
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         where = "整台電腦" if mode == "everything" else root
         self.setWindowTitle(f"{_MODE_TITLES.get(mode, '搜尋')}：{text}（{where}）")
         self.resize(900, 520)

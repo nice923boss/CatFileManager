@@ -146,7 +146,6 @@ class ConflictDialog(QDialog):
     def __init__(self, src: str, dst: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("檔案已存在")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.choice = SKIP
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"目的資料夾已有「{os.path.basename(dst)}」。"))
@@ -201,7 +200,6 @@ class QueueWindow(QDialog):
         self._queue = queue
         self.setWindowTitle("檔案操作")
         self.setMinimumWidth(520)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
         self._title = QLabel("")

@@ -5,7 +5,6 @@ import re
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -137,7 +136,6 @@ class BatchRenameDialog(QDialog):
         self._paths = paths
         self.setWindowTitle(f"批次重新命名（{len(paths)} 個項目）")
         self.setMinimumWidth(520)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()

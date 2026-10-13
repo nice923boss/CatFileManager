@@ -69,3 +69,39 @@ def test_shortcut_action_cancels_pending_rename(qapp, tmp_path, monkeypatch):
     panel.run_action("refresh")
     assert not panel._rename_timer.isActive()
     assert panel._rename_pending_path is None
+
+
+def test_dialogs_keep_title_bar_close_button(qapp, tmp_path):
+    # PySide6 6.11: `flags & ~WindowContextHelpButtonHint` also cleared WindowCloseButtonHint,
+    # greying out the title bar X on every dialog.
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QWidget
+
+    from app_dialogs import AboutDialog, CommandPalette, ShortcutListDialog
+    from batch_rename import BatchRenameDialog
+    from file_dialogs import FileProgressDialog, HashDialog
+    from search_dialog import SearchResultsDialog
+    from settings import DEFAULT_PREFS
+    from settings_dialog import SettingsDialog
+    from transfer_ui import ConflictDialog, OperationQueue, QueueWindow
+
+    src = tmp_path / "a.txt"
+    src.write_text("x")
+    hash_dlg = HashDialog([])
+    search_dlg = SearchResultsDialog(QWidget(), "recursive", str(tmp_path), "a", False)
+    hash_dlg._worker.wait()
+    search_dlg._worker.wait()
+    dialogs = [
+        AboutDialog(),
+        CommandPalette({}),
+        ShortcutListDialog({}),
+        BatchRenameDialog([str(src)]),
+        FileProgressDialog("zip", 1),
+        hash_dlg,
+        search_dlg,
+        SettingsDialog(dict(DEFAULT_PREFS)),
+        ConflictDialog(str(src), str(src)),
+        QueueWindow(OperationQueue()),
+    ]
+    for dlg in dialogs:
+        assert dlg.windowFlags() & Qt.WindowType.WindowCloseButtonHint, type(dlg).__name__

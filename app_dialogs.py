@@ -34,7 +34,6 @@ class CommandPalette(QDialog):
     def __init__(self, overrides: dict[str, str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("命令面板")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.resize(480, 420)
         self._chosen = ""
 
@@ -102,7 +101,6 @@ class ShortcutListDialog(QDialog):
     def __init__(self, overrides: dict[str, str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("快捷鍵一覽")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.resize(460, 560)
 
         layout = QVBoxLayout(self)
@@ -130,7 +128,6 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("關於 CatFileManager")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.resize(460, 420)
 
         layout = QVBoxLayout(self)

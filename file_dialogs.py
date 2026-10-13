@@ -1,6 +1,5 @@
 """Progress and hash dialogs used by the file panels."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,7 +24,6 @@ class FileProgressDialog(QDialog):
         self.setWindowTitle(f"正在{op_name}檔案")
         self.setMinimumWidth(420)
         self.setModal(True)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
 
@@ -80,7 +78,6 @@ class HashDialog(QDialog):
         self.setWindowTitle("計算哈希值")
         self.setModal(False)
         self.resize(760, 480)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         layout = QVBoxLayout(self)
 
