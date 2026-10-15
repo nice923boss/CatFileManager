@@ -115,6 +115,22 @@ def test_open_with_template_without_placeholder_appends_file(monkeypatch):
     assert captured[0] == ["notepad.exe", os.path.normpath(r"C:\x.txt")]
 
 
+def test_open_with_dialog_passes_spaced_path_unquoted(monkeypatch):
+    # OpenAs_RunDLL takes the rest of the command line verbatim as the file
+    # name, so quotes added around a path with spaces make the dialog never
+    # appear. The path must reach rundll32 exactly as-is.
+    captured: list = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, *a, **k: captured.append(args))
+
+    host = _StubHost()
+    host._open_with_dialog(r"F:\AI Project\site\index.html")
+
+    assert captured, "Popen was not called"
+    cmd = captured[0] if isinstance(captured[0], str) else subprocess.list2cmdline(captured[0])
+    assert cmd == r"rundll32.exe shell32.dll,OpenAs_RunDLL F:\AI Project\site\index.html"
+    assert host.status_message.messages == []
+
+
 # --- launchers swallow failures instead of raising ------------------------
 
 

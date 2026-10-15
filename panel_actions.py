@@ -108,12 +108,11 @@ class FilePanelActionsMixin:
 
     def _open_with_dialog(self, file_path: str):
         try:
+            # Pass a string, not a list: OpenAs_RunDLL reads the rest of the
+            # command line verbatim as the file name, so the quotes list2cmdline
+            # adds around a path with spaces make the dialog silently not open.
             subprocess.Popen(
-                [
-                    "rundll32.exe",
-                    "shell32.dll,OpenAs_RunDLL",
-                    os.path.normpath(file_path),
-                ]
+                f"rundll32.exe shell32.dll,OpenAs_RunDLL {os.path.normpath(file_path)}"
             )
         except Exception as e:
             self.status_message.emit(_format_launch_error(e))
