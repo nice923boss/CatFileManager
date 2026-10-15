@@ -10,6 +10,8 @@ CHANGELOG: list[tuple[str, list[str]]] = [
             "Everything 搜尋支援 Everything 1.5a",
             "搜尋視窗缺 es.exe 或 Everything 未執行時，提供「一鍵安裝 Everything」與「重新搜尋」",
             "從本程式開啟的其他程式不再鎖住本程式的檔案，更新或重新打包時不會被擋住",
+            "對話框標題列的關閉按鈕不再變灰",
+            "路徑含空白時，「開啟方式 → 選擇其他程式」不再沒反應",
         ],
     ),
     (
