@@ -18,6 +18,5 @@
 | 「選擇其他程式」只在 Windows 11 實測 | 2026-10-15 在 Windows 11（26200，新版 WinUI 對話框）實測含空白、中文加空白、無空白三種路徑，打包版也實際點過 | Windows 10 的舊版「開啟方式」對話框未測，rundll32 不加引號傳路徑的寫法在舊版是否同樣有效未驗證 | 有 Windows 10 測試機時 | 黃政文 |
 | 7z、rar 解壓縮需另裝 7-Zip | 標準函式庫只支援 zip 與 tar | 未安裝 7-Zip 時會顯示「需安裝 7-Zip」 | 系統限制，不補 | 不適用 |
 | 打包版開啟的程式仍繼承指向 _internal 的環境變數 | 啟動時已清掉 PyInstaller 設的 DLL 搜尋目錄（SetDllDirectory），但 PyInstaller 的 runtime hook 另外把 _internal、_internal\PySide6、_internal\pywin32_system32 加到 PATH 最前面，並設定 QT_PLUGIN_PATH、QML2_IMPORT_PATH，從 App 開啟的程式都會繼承 | PATH 排在 System32 之後，所以 System32 已有的 DLL 不受影響（2026-10-13 實測 shell open、CMD、PowerShell、Windows Terminal、一鍵安裝的子程序都沒載入 _internal 的模組）；但 System32 沒有的 DLL（Qt6*.dll、libcrypto-3.dll，或沒裝 VC++ 可轉散發套件的電腦上的 VCRUNTIME140.dll）仍可能被子程序從 _internal 載入並鎖住 dist；從 App 開啟的其他 Qt 程式可能掃到本 App 的 Qt plugin | 未排定 | 黃政文 |
-| 打包版未確認含 QtPdf | 新增的快速預覽用到 QtPdf；本次未重新打包 exe | 原始碼執行已實測 PDF 預覽；打包版若漏收 QtPdf 模組會無法啟動或無法預覽 PDF | 下次打包時 | 黃政文 |
 | 快速預覽的 GIF 只顯示第一格 | 燈箱以靜態圖片解碼 | 動態 GIF 不會播放 | 未排定 | 黃政文 |
 | 快速預覽不支援 HEIC | Qt 沒有 HEIC 解碼器 | .heic 按空白鍵改走 QuickLook，未安裝 QuickLook 時無法預覽 | 系統限制，不補 | 不適用 |
