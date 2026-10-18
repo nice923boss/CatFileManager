@@ -20,3 +20,10 @@
 | 打包版開啟的程式仍繼承指向 _internal 的環境變數 | 啟動時已清掉 PyInstaller 設的 DLL 搜尋目錄（SetDllDirectory），但 PyInstaller 的 runtime hook 另外把 _internal、_internal\PySide6、_internal\pywin32_system32 加到 PATH 最前面，並設定 QT_PLUGIN_PATH、QML2_IMPORT_PATH，從 App 開啟的程式都會繼承 | PATH 排在 System32 之後，所以 System32 已有的 DLL 不受影響（2026-10-13 實測 shell open、CMD、PowerShell、Windows Terminal、一鍵安裝的子程序都沒載入 _internal 的模組）；但 System32 沒有的 DLL（Qt6*.dll、libcrypto-3.dll，或沒裝 VC++ 可轉散發套件的電腦上的 VCRUNTIME140.dll）仍可能被子程序從 _internal 載入並鎖住 dist；從 App 開啟的其他 Qt 程式可能掃到本 App 的 Qt plugin | 未排定 | 黃政文 |
 | 快速預覽的 GIF 只顯示第一格 | 燈箱以靜態圖片解碼 | 動態 GIF 不會播放 | 未排定 | 黃政文 |
 | 快速預覽不支援 HEIC | Qt 沒有 HEIC 解碼器 | .heic 按空白鍵改走 QuickLook，未安裝 QuickLook 時無法預覽 | 系統限制，不補 | 不適用 |
+| 快速預覽的 4K 影片可能不順 | 影格轉成圖片自行繪製（QVideoWidget 會搶走燈箱的鍵盤焦點），4K 每格轉換約 25 ms | 4K 或高幀率影片可能掉格；1080p 測試片與 768×448 實際影片播放正常 | 未排定 | 黃政文 |
+| 快速預覽的影音只實測常見編碼 | 解碼使用 PySide6 內附的 FFmpeg | 2026-10-19 實測 H.264、HEVC、VP9、MPEG-4、WMV2、FLV1、MPEG-2 影片（mp4、mkv、webm、avi、mov、wmv、flv、mpg、ts）與 mp3、wav、flac、m4a、ogg、opus、wma、aac 音訊；m4v、mpeg、oga 與其他編碼未測，無法解碼時顯示「無法播放這個檔案」 | 未排定 | 黃政文 |
+| 快速預覽文字檔只讀前 2 MB | 避免大檔拖慢開啟 | 超過 2 MB 只顯示開頭並註明；單行超過一萬字會分段顯示（壓縮過的 js、json），複製時會多出換行 | 未排定 | 黃政文 |
+| 快速預覽文字檔只辨識 UTF-8、UTF-16、Big5 | 依序嘗試帶 BOM 的 UTF-16、UTF-8，失敗改用 Big5（cp950） | 簡體 GBK、日文 Shift-JIS 等編碼會顯示亂碼 | 未排定 | 黃政文 |
+| 沒有副檔名的檔案不走內建預覽 | 依副檔名判斷類型 | README、LICENSE、.gitignore 等按空白鍵改走 QuickLook | 未排定 | 黃政文 |
+| 快速預覽影音停止改用清空來源 | PySide6 6.11 的 FFmpeg 後端在快轉後呼叫 stop()、或銷毀仍有來源的播放器時會卡死，改為清空來源，並在程式結束前先停止 | 2026-10-19 以原始碼實測 mp4、webm、flac 快轉後立刻關燈箱或結束程式都不卡死；打包版的影音播放與播放中關閉主視窗未實測（當時使用者的 App 正在執行，單一執行個體檢查讓測試版直接結束）；升級 PySide6 後需重新確認 | 下次打包時 | 黃政文 |
+| Office 檔快速預覽仍交給 QuickLook | 2026-10-19 選定內建格式時未納入 docx、xlsx、pptx（需另外的解析或轉檔元件） | 未安裝 QuickLook 時無法預覽 Office 檔 | 不補 | 不適用 |

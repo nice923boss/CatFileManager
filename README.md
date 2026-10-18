@@ -12,7 +12,7 @@ Windows 用的多面板檔案管理器，以 Python 與 PySide6（Qt 6）撰寫�
 - **連結辨識**：Junction、符號連結、捷徑顯示箭頭徽章，右鍵可開啟實際位置
 - **外觀**：深色、淺色、跟隨系統主題；字型與字級可調；依檔案類型著色；詳細資料與大圖示檢視
 - **效率工具**：快捷鍵全部可自訂（F1 查看一覽）、命令面板（Ctrl+Shift+P）、右鍵選單項目可排序與隱藏、我的最愛（找不到的路徑會標示）
-- **其他**：在此開啟 CMD／PowerShell／Windows Terminal、壓縮 ZIP、計算雜湊值、空白鍵快速預覽（圖片、PDF、Markdown 內建燈箱，上下鍵切換；其他格式交給 QuickLook）
+- **其他**：在此開啟 CMD／PowerShell／Windows Terminal、壓縮 ZIP、計算雜湊值、空白鍵快速預覽（圖片、PDF、Markdown、文字與程式碼、影片、音訊內建燈箱，上下鍵切換，影音可暫停與快轉；Office 等其他格式交給 QuickLook）
 
 ## 系統需求
 
@@ -46,7 +46,7 @@ python app.py
 | 工具 | 用途 | 下載 |
 |------|------|------|
 | Everything 與 ES 命令列工具 | 全碟秒搜（搜尋視窗選「Everything」模式） | https://www.voidtools.com/ |
-| QuickLook | 空白鍵預覽圖片、PDF、Markdown 以外的檔案 | https://github.com/QL-Win/QuickLook |
+| QuickLook | 空白鍵預覽內建燈箱以外的檔案（Office 等） | https://github.com/QL-Win/QuickLook |
 
 沒裝 Everything 時，Everything 搜尋結果視窗會出現「一鍵安裝 Everything」按鈕，執行 `install_everything.ps1`：用 winget 安裝 ES 命令列工具與 Everything（安裝 Everything 會跳出系統管理員確認），已安裝但沒執行的 Everything 會直接啟動。裝好後按「重新搜尋」。支援 Everything 1.4、1.5 Beta 與 1.5 Alpha（自動改用 `-instance 1.5a`）。
 

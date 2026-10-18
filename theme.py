@@ -226,6 +226,22 @@ QPdfView#previewPdf {{ background: transparent; border: none; }}
 QTextBrowser#previewText {{
     background-color: {panel}; color: {text}; border: none; font-size: {font_size}px;
 }}
+QPlainTextEdit#previewCode {{
+    background-color: {panel}; color: {text}; border: none; padding: 12px;
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: {font_size}px;
+}}
+QWidget#quickPreview QLabel#previewNote {{ color: #a0a0a0; font-size: 96px; }}
+QPushButton#previewPlay {{
+    color: #f0f0f0; background: transparent; border: none; font-size: 14px; padding: 2px 8px;
+}}
+QPushButton#previewPlay:hover {{ background-color: rgba(255, 255, 255, 40); border-radius: 3px; }}
+QSlider#previewSeek::groove:horizontal {{
+    height: 4px; background: rgba(255, 255, 255, 60); border-radius: 2px;
+}}
+QSlider#previewSeek::sub-page:horizontal {{ background: {accent}; border-radius: 2px; }}
+QSlider#previewSeek::handle:horizontal {{
+    background: #f0f0f0; width: 12px; margin: -4px 0; border-radius: 6px;
+}}
 """
 
 

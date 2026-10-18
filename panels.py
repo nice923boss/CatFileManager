@@ -310,7 +310,8 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
         edit.selectAll()
 
     def _preview(self) -> None:
-        """Space: built-in lightbox for images / PDF / Markdown, QuickLook for the rest (E02)."""
+        """Space: built-in lightbox for images / PDF / Markdown / text / video / audio,
+        QuickLook for the rest (E02)."""
         selected = self._get_selected_paths()
         if len(selected) != 1:
             return

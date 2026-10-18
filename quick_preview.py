@@ -1,11 +1,14 @@
-"""Space-bar quick preview (lightbox) for images, PDF and Markdown.
+"""Space-bar quick preview (lightbox) for images, PDF, Markdown, plain text / code,
+video and audio.
 
 `QuickPreview` covers the whole main window with a dark backdrop and shows one
 file at a time; Up / Down step through the other previewable files of the
-panel, Space / Esc / a click on the backdrop close it. Other file types keep
-going to QuickLook (see `FilePanel._preview`).
+panel, Space / Esc / a click on the backdrop close it. Video and audio start
+playing at once; Enter pauses / resumes and Left / Right seek. Other file types
+keep going to QuickLook (see `FilePanel._preview`).
 """
 
+import codecs
 import logging
 import os
 
@@ -16,6 +19,7 @@ from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTextBrowser,
@@ -23,32 +27,79 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from file_types import IMAGE_EXTS
+from file_types import IMAGE_EXTS, VIDEO_EXTS
+from preview_media import SEEK_STEP_MS, MediaView
 
 log = logging.getLogger(__name__)
 
 _QT_IMAGE_EXTS = {"." + bytes(f).decode() for f in QImageReader.supportedImageFormats()}
+_TEXT_EXTS = {
+    ".txt", ".log", ".ini", ".cfg", ".conf", ".toml", ".yaml", ".yml", ".properties", ".env",
+    ".json", ".jsonl", ".csv", ".tsv", ".xml", ".html", ".htm", ".css", ".srt", ".vtt", ".ass",
+    ".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".sql",
+    ".bat", ".cmd", ".ps1", ".sh", ".vbs", ".reg",
+    ".c", ".h", ".cpp", ".hpp", ".cs", ".java", ".go", ".rs", ".php", ".rb", ".xaml",
+}  # fmt: skip
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg", ".oga", ".opus", ".wma"}
 _KINDS = {
     **{ext: "image" for ext in IMAGE_EXTS & _QT_IMAGE_EXTS},  # .heic has no Qt reader
+    **{ext: "text" for ext in _TEXT_EXTS},
+    **{ext: "video" for ext in VIDEO_EXTS - {".ts"}},  # .ts: TypeScript or MPEG-TS, sniffed
+    **{ext: "audio" for ext in _AUDIO_EXTS},
     ".pdf": "pdf",
     ".md": "markdown",
     ".markdown": "markdown",
 }
 _MARKDOWN_MAX_WIDTH = 900
+_TEXT_LIMIT = 2 * 1024 * 1024
+_LINE_CHUNK = 10000
+_TRUNCATED_NOTE = "\n\n……（檔案超過 2 MB，只顯示開頭）"
+_HINT = "↑ ↓ 上一個／下一個　　空白鍵或 Esc 關閉"
+_MEDIA_HINT = "↑ ↓ 上一個／下一個　　Enter 暫停／播放　　← → 倒轉／快轉 5 秒　　空白鍵或 Esc 關閉"
 
 
 def preview_kind(path: str) -> str:
-    """Return "image" / "pdf" / "markdown", or "" when the built-in preview can't show it."""
+    """Return "image" / "pdf" / "markdown" / "text" / "video" / "audio", or "" when the
+    built-in preview can't show it."""
     return _KINDS.get(os.path.splitext(path)[1].lower(), "")
 
 
-def _read_text(path: str) -> str:
-    with open(path, "rb") as f:
-        data = f.read()
+def _is_mpeg_ts(path: str) -> bool:
+    """MPEG transport streams are 188-byte packets that each start with 0x47."""
     try:
-        return data.decode("utf-8-sig")
+        with open(path, "rb") as f:
+            head = f.read(377)
+    except OSError:
+        return False
+    return len(head) == 377 and head[0] == head[188] == head[376] == 0x47
+
+
+def _read_text(path: str, limit: int = _TEXT_LIMIT) -> tuple[str, bool]:
+    """Decode the first `limit` bytes; returns (text, truncated)."""
+    with open(path, "rb") as f:
+        data = f.read(limit + 1)
+    truncated = len(data) > limit
+    data = data[:limit]
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return data.decode("utf-16", errors="replace"), truncated
+    try:
+        # Incremental, so a cut in the middle of a character isn't taken for non-UTF-8.
+        return codecs.getincrementaldecoder("utf-8-sig")().decode(data, not truncated), truncated
     except UnicodeDecodeError:
-        return data.decode("cp950", errors="replace")
+        return data.decode("cp950", errors="replace"), truncated
+
+
+def _split_long_lines(text: str) -> str:
+    """Laying out one huge line (minified JS / JSON) takes seconds; cut into blocks it takes
+    milliseconds and, wrapped, looks the same."""
+    lines = text.split("\n")
+    if max(map(len, lines)) <= _LINE_CHUNK:
+        return text
+    return "\n".join(
+        line[i : i + _LINE_CHUNK]
+        for line in lines
+        for i in range(0, max(len(line), 1), _LINE_CHUNK)
+    )
 
 
 class _ImageView(QWidget):
@@ -142,26 +193,38 @@ class QuickPreview(QWidget):
         text_row = QHBoxLayout(text_page)
         text_row.setContentsMargins(0, 0, 0, 0)
         text_row.addWidget(self._text)
+        self._code = QPlainTextEdit()
+        self._code.setObjectName("previewCode")
+        self._code.setReadOnly(True)
+        self._media = MediaView()
+        self._media.failed.connect(self._on_media_failed)
         self._message = QLabel()
         self._message.setObjectName("previewTitle")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        for w in (self._pdf, self._text):
+        for w in (self._pdf, self._text, self._code):
             # Keys stay with the lightbox (Up / Down switch files); the wheel still scrolls.
             w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._stack = QStackedWidget()
-        for page in (self._image, self._pdf, text_page, self._message):
+        for page in (self._image, self._pdf, text_page, self._code, self._media, self._message):
             self._stack.addWidget(page)
-        self._pages = {"image": self._image, "pdf": self._pdf, "markdown": text_page}
+        self._pages = {
+            "image": self._image,
+            "pdf": self._pdf,
+            "markdown": text_page,
+            "text": self._code,
+            "video": self._media,
+            "audio": self._media,
+        }
 
-        hint = QLabel("↑ ↓ 上一個／下一個　　空白鍵或 Esc 關閉")
-        hint.setObjectName("previewDim")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hint = QLabel(_HINT)
+        self._hint.setObjectName("previewDim")
+        self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 12, 40, 12)
         layout.addLayout(top)
         layout.addWidget(self._stack, 1)
-        layout.addWidget(hint)
+        layout.addWidget(self._hint)
 
         host.installEventFilter(self)
 
@@ -190,17 +253,32 @@ class QuickPreview(QWidget):
         path = self.current_path()
         self._title.setText(os.path.basename(path))
         self._counter.setText(f"{self._index + 1} / {len(self._paths)}")
+        self._media.stop()
         self._pdf_doc.close()
         self._text.clear()
+        self._code.clear()
         self._image.set_pixmap(QPixmap())
         kind = preview_kind(path)
-        loaders = {"image": self._load_image, "pdf": self._load_pdf, "markdown": self._load_text}
+        if kind == "text" and path.lower().endswith(".ts") and _is_mpeg_ts(path):
+            kind = "video"
+        loaders = {
+            "image": self._load_image,
+            "pdf": self._load_pdf,
+            "markdown": self._load_markdown,
+            "text": self._load_plain,
+            "video": lambda p: self._load_media(p, video=True),
+            "audio": lambda p: self._load_media(p, video=False),
+        }
         error = loaders[kind](path)
         if error:
-            self._message.setText(error)
-            self._stack.setCurrentWidget(self._message)
+            self._show_message(error)
         else:
             self._stack.setCurrentWidget(self._pages[kind])
+        self._hint.setText(_MEDIA_HINT if self._showing_media() else _HINT)
+
+    def _show_message(self, text: str) -> None:
+        self._message.setText(text)
+        self._stack.setCurrentWidget(self._message)
 
     def _load_image(self, path: str) -> str:
         reader = QImageReader(path)
@@ -229,16 +307,41 @@ class QuickPreview(QWidget):
             return "無法開啟這份 PDF"
         return ""
 
-    def _load_text(self, path: str) -> str:
+    def _read(self, path: str) -> str | None:
         try:
-            text = _read_text(path)
+            text, truncated = _read_text(path)
         except OSError as e:
             log.warning("Cannot preview %s: %s", path, e)
+            return None
+        return text + _TRUNCATED_NOTE if truncated else text
+
+    def _load_markdown(self, path: str) -> str:
+        text = self._read(path)
+        if text is None:
             return "無法讀取這個檔案"
         # Relative image links in the Markdown resolve against the file's folder.
         self._text.document().setBaseUrl(QUrl.fromLocalFile(os.path.dirname(path) + os.sep))
         self._text.setMarkdown(text)
         return ""
+
+    def _load_plain(self, path: str) -> str:
+        text = self._read(path)
+        if text is None:
+            return "無法讀取這個檔案"
+        self._code.setPlainText(_split_long_lines(text))
+        return ""
+
+    def _load_media(self, path: str, video: bool) -> str:
+        self._media.play(path, video)
+        return ""
+
+    def _showing_media(self) -> bool:
+        return self._stack.currentWidget() is self._media
+
+    def _on_media_failed(self, message: str) -> None:
+        if self._showing_media():
+            self._show_message(message)
+            self._hint.setText(_HINT)
 
     # --- Events ---
 
@@ -265,6 +368,10 @@ class QuickPreview(QWidget):
             self.step(1)
         elif key in (Qt.Key.Key_Escape, Qt.Key.Key_Space):
             self.close()
+        elif self._showing_media() and key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._media.toggle()
+        elif self._showing_media() and key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            self._media.seek_by(SEEK_STEP_MS if key == Qt.Key.Key_Right else -SEEK_STEP_MS)
 
     def mousePressEvent(self, event):
         self.close()  # only clicks on the backdrop get here
@@ -273,6 +380,7 @@ class QuickPreview(QWidget):
         QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 215))
 
     def closeEvent(self, event):
+        self._media.stop()
         self.parentWidget().removeEventFilter(self)
         self.closed.emit()
         super().closeEvent(event)
