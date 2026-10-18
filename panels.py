@@ -34,6 +34,7 @@ from link_icon import link_target
 from panel_actions import FilePanelActionsMixin
 from panel_context_menu import FilePanelContextMenuMixin
 from panel_widgets import BreadcrumbBar, _FileIconView, _FileTreeView
+from quick_preview import QuickPreview, preview_kind
 from search_bar import SearchBar
 from search_dialog import SearchResultsDialog
 from settings import DEFAULT_PREFS
@@ -309,9 +310,21 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
         edit.selectAll()
 
     def _preview(self) -> None:
-        """Space: QuickLook preview; explain where to get it when missing (E02)."""
+        """Space: built-in lightbox for images / PDF / Markdown, QuickLook for the rest (E02)."""
         selected = self._get_selected_paths()
         if len(selected) != 1:
+            return
+        entries = self.model.entries()
+        paths = [
+            e.path
+            for e in (entries[r] for r in self._visible_rows())
+            if not e.is_dir and preview_kind(e.path)
+        ]
+        if selected[0] in paths:
+            preview = QuickPreview(self.window(), paths, paths.index(selected[0]))
+            preview.current_changed.connect(self._select_previewed)
+            preview.closed.connect(lambda: self.view().setFocus())
+            preview.open()
             return
         exe = _quicklook_exe()
         if not exe:
@@ -321,6 +334,13 @@ class FilePanel(FilePanelActionsMixin, FilePanelContextMenuMixin, QWidget):
             subprocess.Popen([exe, os.path.normpath(selected[0])])
         except OSError as e:
             self.status_message.emit(f"QuickLook 開啟失敗：{e}")
+
+    def _select_previewed(self, path: str) -> None:
+        """Follow the lightbox's Up / Down in the list (focus stays on the preview)."""
+        for row, e in enumerate(self.model.entries()):
+            if e.path == path:
+                self._select_rows([row])
+                return
 
     def _select_same_type(self) -> None:
         """H07: select every visible item with the same extension as the selection."""

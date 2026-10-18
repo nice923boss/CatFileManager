@@ -214,6 +214,18 @@ QPushButton#historyItem:hover {{ background-color: {select}; color: {select_text
 QLabel#searchCount {{ color: {text_dim}; }}
 QLabel#errorHint {{ color: {error}; }}
 QLabel#dimText {{ color: {text_dim}; }}
+
+/* Quick preview lightbox: dark backdrop in both themes */
+QWidget#quickPreview QLabel#previewTitle {{ color: #f0f0f0; font-size: 14px; font-weight: bold; }}
+QWidget#quickPreview QLabel#previewDim {{ color: #a0a0a0; font-size: 12px; }}
+QPushButton#previewClose {{
+    color: #f0f0f0; background: transparent; border: none; font-size: 16px; padding: 2px 8px;
+}}
+QPushButton#previewClose:hover {{ background-color: rgba(255, 255, 255, 40); border-radius: 3px; }}
+QPdfView#previewPdf {{ background: transparent; border: none; }}
+QTextBrowser#previewText {{
+    background-color: {panel}; color: {text}; border: none; font-size: {font_size}px;
+}}
 """
 
 

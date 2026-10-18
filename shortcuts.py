@@ -33,7 +33,7 @@ ACTIONS: tuple[Action, ...] = (
     Action("select_all", "全選", "Ctrl+A", "panel"),
     Action("select_same_type", "選取同類型檔案", "Ctrl+Shift+T", "panel"),
     Action("open", "開啟", "Return", "panel"),
-    Action("preview", "QuickLook 預覽", "Space", "panel"),
+    Action("preview", "快速預覽", "Space", "panel"),
     # Navigation
     Action("go_up", "上一層", "Backspace", "panel"),
     Action("back", "上一頁", "Alt+Left", "panel"),
