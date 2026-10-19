@@ -1,9 +1,17 @@
 """Application version and user-facing changelog (shown in the About dialog)."""
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 # Newest first: (version, [change lines in Traditional Chinese])
 CHANGELOG: list[tuple[str, list[str]]] = [
+    (
+        "1.2.0",
+        [
+            "按空白鍵快速預覽圖片、PDF、Markdown，上下鍵切換前後檔案",
+            "快速預覽支援文字與程式碼，自動辨識 UTF-8、UTF-16、Big5",
+            "快速預覽可播放影片與音訊，Enter 暫停，左右鍵快轉倒轉 5 秒",
+        ],
+    ),
     (
         "1.1.2",
         [
